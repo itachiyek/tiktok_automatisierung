@@ -1,0 +1,28 @@
+# Secrets / Konfiguration mit echten Werten
+config/creators.yaml
+.env
+*.env
+secrets/
+
+# Daten / Medien (groß, nicht versionieren)
+data/
+downloads/
+renders/
+*.mp4
+*.mov
+*.mkv
+*.wav
+*.mp3
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.mypy_cache/
+.pytest_cache/
+
+# OS / Editor
+.DS_Store
+.idea/
+.vscode/

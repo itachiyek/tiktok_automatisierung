@@ -1,0 +1,70 @@
+# Creator-Profile für die Clip-Pipeline.
+# Kopieren nach config/creators.yaml und mit echten Werten/IDs füllen.
+# Hinweis: KEINE API-Keys/Tokens hier ablegen — die kommen aus Env-Variablen/Secret-Store.
+
+creators:
+  - id: trymacs
+    name: Trymacs
+    consent: true              # schriftliche Einwilligung liegt vor (Datum/Doku referenzieren)
+    revenue_share: 0.30        # Anteil an den Creator (Beispielwert, noch festlegen)
+    sources:
+      twitch:
+        login: trymacs
+        pull_existing_clips: true   # Community-Clips = vorkuratierte Highlights (Top-Quelle)
+        pull_vods: true
+      youtube:
+        channel_id: "UC_XXXXXXXXXXXXXXXXXXXXXX"   # Haupt-Channel-ID eintragen
+        monitor_uploads: true
+    tiktok_account: "@trymacs.clips"
+    style:
+      language: de
+      niche: [gaming, eafc, reaction, entertainment]
+      tone: "hyped, jugendlich, viel Energie"
+
+  - id: eligella
+    name: Eligella
+    consent: true
+    revenue_share: 0.30
+    sources:
+      twitch:
+        login: eligella
+        pull_existing_clips: true
+        pull_vods: true
+      youtube:
+        channel_id: "UC_XXXXXXXXXXXXXXXXXXXXXX"
+        monitor_uploads: true
+    tiktok_account: "@eligella.clips"
+    style:
+      language: de
+      niche: [variety, just_chatting, gaming]
+      tone: "locker, witzig, nahbar"
+
+  - id: sidney
+    name: Sidney
+    consent: true
+    revenue_share: 0.30
+    sources:
+      twitch:
+        login: sidney            # exakten Twitch-Login prüfen/eintragen
+        pull_existing_clips: true
+        pull_vods: true
+      youtube:
+        channel_id: "UC_XXXXXXXXXXXXXXXXXXXXXX"
+        monitor_uploads: true
+    tiktok_account: "@sidney.clips"
+    style:
+      language: de
+      niche: [gaming, entertainment]
+      tone: "energetisch, direkt"
+
+# Globale Defaults für alle Creator (überschreibbar pro Creator)
+defaults:
+  clip:
+    min_duration_sec: 61       # > 60 Sek. wegen TikTok Creator Rewards
+    max_duration_sec: 90
+    aspect_ratio: "9:16"
+    burn_subtitles: true
+    show_creator_credit: true  # faire Namensnennung; kein fremdes Wasserzeichen einbrennen
+  posting:
+    per_account_per_day: 2
+    require_human_review: true # zu Beginn manuelle Freigabe (später lockern)
