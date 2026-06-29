@@ -80,6 +80,17 @@ def test_quality_gate_duplicate_and_duration(tmp_path):
     assert not ok and "Duplikat" in reason
 
 
+def test_build_auth_url():
+    from src.upload.tiktok_auth import build_auth_url
+
+    url = build_auth_url("CK123", "http://localhost:8080/callback", ["user.info.basic", "video.publish"], "st_x")
+    assert url.startswith("https://www.tiktok.com/v2/auth/authorize/?")
+    assert "client_key=CK123" in url
+    assert "video.publish" in url
+    assert "redirect_uri=http%3A%2F%2Flocalhost%3A8080%2Fcallback" in url
+    assert "state=st_x" in url
+
+
 def test_db_roundtrip():
     conn = db.init_db(db.connect(":memory:"))
     c = Clip("eligella", "twitch_clip:9", Segment(0, 65), path="/x.mp4", meta=ClipMeta("T", "Cap", ["#a"]))

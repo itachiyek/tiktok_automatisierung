@@ -25,6 +25,10 @@ cp .env.example .env                                    # API-Keys eintragen (s.
 # 3) Prüfen, was noch fehlt (zeigt jeden Key einzeln an)
 python3 -m src.cli check
 
+# 3b) TikTok-Konten autorisieren -> erzeugt TIKTOK_ACCESS_TOKEN_<ID> zum Einfügen in .env
+#     (einmal pro Creator-Konto; öffnet den TikTok-Login)
+python3 -m src.cli auth --creator trymacs
+
 # 4) Trockenlauf – zeigt nur, welche Quellen gefunden würden (nichts wird hochgeladen)
 python3 -m src.cli run --dry-run
 
@@ -52,8 +56,13 @@ python3 -m src.cli upload-approved --creator trymacs  # privat hochladen (vor Au
 | `YOUTUBE_API_KEY` | neue YouTube-Uploads erkennen | https://console.cloud.google.com → „YouTube Data API v3" aktivieren → API-Key | Optional (nur mit `--youtube`) |
 | `ANTHROPIC_API_KEY` | Caption & Hashtags per Claude | https://console.anthropic.com | Empfohlen (ohne → Template-Texte) |
 | `TIKTOK_CLIENT_KEY` / `TIKTOK_CLIENT_SECRET` | App-Identität der TikTok-API | https://developers.tiktok.com → App → **Content Posting API** beantragen | **Ja** (zum Hochladen) |
-| `TIKTOK_ACCESS_TOKEN_<ID>` | Upload-Token pro Creator-Account (Scope `video.publish`) | OAuth-Flow je TikTok-Konto; `<ID>` = `id` aus `creators.yaml` (GROSS), z. B. `TIKTOK_ACCESS_TOKEN_TRYMACS` | **Ja** (pro Konto) |
-| `TIKTOK_REFRESH_TOKEN_<ID>` | Token-Erneuerung | gleicher OAuth-Flow | Empfohlen |
+| `TIKTOK_REDIRECT_URI` | Login-Rückruf-Adresse | muss identisch im Developer Portal eingetragen sein (Default `http://localhost:8080/callback`) | **Ja** für `auth` |
+| `TIKTOK_ACCESS_TOKEN_<ID>` | Upload-Token pro Creator-Account (Scope `video.publish`) | **`python3 -m src.cli auth --creator <id>`** erzeugt es; `<ID>` = `id` aus `creators.yaml` (GROSS) | **Ja** (pro Konto) |
+| `TIKTOK_REFRESH_TOKEN_<ID>` | Token-Erneuerung | gleicher `auth`-Befehl | Empfohlen |
+
+> **Client Key/Secret ≠ Access Token.** Key/Secret (aus dem Portal) identifizieren deine *App*.
+> Der *Access Token* erlaubt das Posten auf *ein bestimmtes Konto* und entsteht erst durch den
+> Login dieses Kontos — dafür ist der Befehl `auth` da.
 
 **Wichtig zu TikTok:** Die Freigabe der Content Posting API dauert i. d. R. **2–6 Wochen** (Audit).
 **Jetzt beantragen.** Vor dem Audit sind Uploads nur privat sichtbar (`SELF_ONLY`) — der Code

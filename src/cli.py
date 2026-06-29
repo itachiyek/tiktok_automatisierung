@@ -19,6 +19,7 @@ from .config import (
     anthropic_api_key,
     load_config,
     tiktok_credentials,
+    tiktok_redirect_uri,
     twitch_credentials,
     youtube_api_key,
 )
@@ -107,6 +108,23 @@ def cmd_upload_approved(args) -> int:
     return 0
 
 
+def cmd_auth(args) -> int:
+    from .upload import tiktok_auth
+
+    ck, cs = tiktok_credentials()
+    if not (ck and cs):
+        print("❌ TIKTOK_CLIENT_KEY / TIKTOK_CLIENT_SECRET fehlen in der .env.")
+        return 1
+    try:
+        tiktok_auth.run_oauth(
+            args.creator, ck, cs, tiktok_redirect_uri(), manual=args.manual
+        )
+    except Exception as exc:
+        print(f"❌ OAuth fehlgeschlagen: {exc}")
+        return 1
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="tiktok-pipeline", description=__doc__)
     sub = p.add_subparsers(dest="command", required=True)
@@ -136,6 +154,11 @@ def build_parser() -> argparse.ArgumentParser:
     u.add_argument("--creator", help="nur dieser Creator")
     u.add_argument("--public", action="store_true", help="öffentlich posten (nur nach TikTok-Audit!)")
     u.set_defaults(func=cmd_upload_approved)
+
+    au = sub.add_parser("auth", help="TikTok-Konto autorisieren -> Access-Token erzeugen")
+    au.add_argument("--creator", required=True, help="Creator-id (z. B. trymacs)")
+    au.add_argument("--manual", action="store_true", help="ohne lokalen Server: Redirect-URL einfügen")
+    au.set_defaults(func=cmd_auth)
     return p
 
 

@@ -108,6 +108,10 @@ def tiktok_credentials() -> tuple[Optional[str], Optional[str]]:
     return os.environ.get("TIKTOK_CLIENT_KEY"), os.environ.get("TIKTOK_CLIENT_SECRET")
 
 
+def tiktok_redirect_uri() -> str:
+    return os.environ.get("TIKTOK_REDIRECT_URI", "http://localhost:8080/callback")
+
+
 def ensure_dirs() -> None:
     for d in (DATA_DIR, DOWNLOAD_DIR, RENDER_DIR):
         d.mkdir(parents=True, exist_ok=True)
