@@ -1,0 +1,12 @@
+# Pipeline-Abhängigkeiten
+requests>=2.31          # Twitch/YouTube/TikTok REST
+PyYAML>=6.0             # config/creators.yaml
+python-dotenv>=1.0      # .env laden
+anthropic>=0.40         # Claude API (Texte/Hashtags)
+yt-dlp>=2024.1          # Download von Twitch/YouTube
+faster-whisper>=1.0     # Untertitel-Transkription
+numpy>=1.24             # Audio-Energie-Analyse
+
+# Systemvoraussetzung (NICHT pip): ffmpeg + ffprobe im PATH
+#   Debian/Ubuntu:  sudo apt-get install ffmpeg
+#   macOS:          brew install ffmpeg
