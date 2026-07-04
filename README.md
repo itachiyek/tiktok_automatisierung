@@ -37,6 +37,12 @@ python3 -m src.cli zernio-accounts
 # 4) Trockenlauf – zeigt nur, welche Quellen gefunden würden (nichts wird hochgeladen)
 python3 -m src.cli run --dry-run
 
+# 4b) EINZELNES Video sofort posten (ohne Cut-Pipeline):
+python3 -m src.cli post --file mein_clip.mp4 --caption "Krasse Aktion! 🔥 #fyp"
+#   geplant statt sofort:   --in 30   (in 30 min)   oder   --at 2026-07-05T18:00:00Z
+#   öffentliche URL statt Datei:  --url https://.../video.mp4
+#   privat testen:  --privacy SELF_ONLY   ·   Vorschau ohne Senden:  --dry-run
+
 # 5) VOLLAUTOMATIK (für Crons): schneiden + auto-freigeben + via Zernio gestaffelt einplanen
 python3 -m src.cli auto --limit 3
 #   sofort statt geplant veröffentlichen:  python3 -m src.cli auto --now

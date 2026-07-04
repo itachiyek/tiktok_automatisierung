@@ -5,6 +5,7 @@ Befehle:
   init-db               Datenbank anlegen
   run                   Pipeline laufen lassen (Ingest -> Clip -> ggf. Upload)
   auto                  Vollautomatik für Crons: Cut + Auto-Freigabe + Zernio-Planung
+  post                  Ein einzelnes Video direkt via Zernio posten/planen
   zernio-accounts       In Zernio verbundene Konten auflisten (accountId finden)
   clips                 Erzeugte Clips auflisten
   approve <id...>       Clips freigeben (pending_review -> approved)
@@ -20,6 +21,7 @@ from . import db, pipeline
 from .config import (
     anthropic_api_key,
     load_config,
+    load_env,
     tiktok_credentials,
     tiktok_redirect_uri,
     twitch_credentials,
@@ -106,6 +108,87 @@ def cmd_auto(args) -> int:
         force_now=args.now,
     )
     return 0
+
+
+def _parse_when(args):
+    """Liefert (when, publish_now) aus --now/--in/--at."""
+    from datetime import datetime, timedelta, timezone
+
+    if getattr(args, "at", None):
+        raw = args.at.replace("Z", "+00:00")
+        return datetime.fromisoformat(raw), False
+    if getattr(args, "in_min", None):
+        return datetime.now(timezone.utc) + timedelta(minutes=int(args.in_min)), False
+    return None, True  # Standard: sofort
+
+
+def cmd_post(args) -> int:
+    """Ein einzelnes Video direkt via Zernio posten/planen (ohne Cut-Pipeline)."""
+    from .upload.zernio import ZernioClient, ZernioError
+
+    key = zernio_api_key()
+    if not key:
+        print("❌ ZERNIO_API_KEY fehlt in der .env.")
+        return 1
+    if not args.file and not args.url:
+        print("❌ Bitte --file <pfad> ODER --url <öffentliche Video-URL> angeben.")
+        return 1
+
+    # Creator-Kontext (optional) für Handle/Privacy/Timezone.
+    creator = None
+    if args.creator:
+        try:
+            creator = load_config().get(args.creator)
+        except Exception:
+            creator = None
+    username = creator.tiktok_account if creator else None
+    account_id = args.account_id or (creator.zernio_account_id() if creator else None)
+    privacy = args.privacy or (creator.posting.get("privacy_level") if creator else None) or "PUBLIC_TO_EVERYONE"
+    tz = (creator.posting.get("timezone") if creator else None) or "UTC"
+
+    when, publish_now = _parse_when(args)
+
+    # Dry-Run: Request-Body OHNE Netzwerk zeigen (Konto/Media als Platzhalter, falls unbekannt).
+    if args.dry_run:
+        from .upload.zernio import build_tiktok_post_body
+        import json as _json
+
+        body = build_tiktok_post_body(
+            account_id or "<ACCOUNT_ID (auto-aufgeloest)>",
+            args.caption or "",
+            args.url or f"<upload:{args.file}>",
+            when=when, publish_now=publish_now, privacy_level=privacy, timezone=tz,
+        )
+        print("[dry-run] Request-Body an POST /v1/posts:")
+        print(_json.dumps(body, indent=2, ensure_ascii=False))
+        return 0
+
+    try:
+        client = ZernioClient(key, zernio_base_url())
+        resolved_account = client.resolve_account_id("tiktok", username=username, account_id=account_id)
+        print(f"→ Konto: {resolved_account}")
+
+        # Medien-URL bestimmen (URL direkt nutzen, sonst Datei hochladen).
+        if args.url:
+            media_url = args.url
+        else:
+            print(f"→ lade Video hoch: {args.file}")
+            media_url = client.upload_video(args.file)
+            print(f"→ öffentliche URL: {media_url}")
+
+        pid = client.create_tiktok_post(
+            resolved_account, args.caption or "", media_url,
+            when=when, publish_now=publish_now, privacy_level=privacy, timezone=tz,
+        )
+        mode = "sofort veröffentlicht" if publish_now else f"geplant für {when.isoformat()}"
+        print(f"✅ TikTok-Post {mode} (privacy={privacy}). Zernio-Post-ID: {pid}")
+        return 0
+    except ZernioError as exc:
+        print(f"❌ {exc}")
+        return 1
+    except Exception as exc:
+        print(f"❌ Post fehlgeschlagen: {exc}")
+        return 1
 
 
 def cmd_zernio_accounts(args) -> int:
@@ -209,6 +292,19 @@ def build_parser() -> argparse.ArgumentParser:
     za.add_argument("--platform", default="tiktok", help="Plattform-Filter (Standard: tiktok)")
     za.set_defaults(func=cmd_zernio_accounts)
 
+    po = sub.add_parser("post", help="ein einzelnes Video direkt via Zernio posten/planen")
+    po.add_argument("--file", help="lokale Videodatei (wird zu Zernio hochgeladen)")
+    po.add_argument("--url", help="öffentliche Video-URL (statt Datei-Upload)")
+    po.add_argument("--caption", default="", help="Caption/Beschreibung (mit Hashtags)")
+    po.add_argument("--creator", help="Creator-id für Handle/Privacy/Timezone (optional)")
+    po.add_argument("--account-id", dest="account_id", help="Zernio-Konto-ID direkt (optional)")
+    po.add_argument("--privacy", help="PUBLIC_TO_EVERYONE (Standard) oder SELF_ONLY")
+    po.add_argument("--now", action="store_true", help="sofort veröffentlichen (Standard)")
+    po.add_argument("--in", dest="in_min", type=int, help="in N Minuten planen")
+    po.add_argument("--at", help="Zeitpunkt planen (ISO, z. B. 2026-07-05T18:00:00Z)")
+    po.add_argument("--dry-run", action="store_true", help="nur Request-Body zeigen, nichts senden")
+    po.set_defaults(func=cmd_post)
+
     c = sub.add_parser("clips", help="Clips auflisten")
     c.add_argument("--status", help="filtern: new|pending_review|approved|uploaded|failed")
     c.add_argument("--creator", help="filtern nach Creator-id")
@@ -231,6 +327,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv=None) -> int:
+    load_env()  # .env fuer alle Befehle laden (Keys aus ENV/.env verfuegbar machen)
     args = build_parser().parse_args(argv)
     return args.func(args)
 
