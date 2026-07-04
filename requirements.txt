@@ -1,5 +1,5 @@
 # Pipeline-Abhängigkeiten
-requests>=2.31          # Twitch/YouTube/TikTok REST
+requests>=2.31          # Twitch/YouTube/TikTok/Zernio REST
 PyYAML>=6.0             # config/creators.yaml
 python-dotenv>=1.0      # .env laden
 anthropic>=0.40         # Claude API (Texte/Hashtags)

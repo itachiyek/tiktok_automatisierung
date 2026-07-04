@@ -3,6 +3,20 @@
 > Kopiere diese Datei (oder ihren Inhalt) in eine neue Session, um nahtlos weiterzumachen.
 > Stand: 2026-06-29 · Branch: `claude/tiktok-clips-automation-plan-6fmit4`
 
+## Update 2026-07-04 (Branch `claude/highlight-video-zernio-automation-qqn3zs`)
+Neu gebaut auf Wunsch des Nutzers:
+- **Untertitel jetzt OBEN** im Video (ASS-Alignment 8, `subtitle_position: top`, `src/edit/subtitles.py`).
+- **Clips 1–2 Minuten** (min 60 / max 120 / Ziel 90 s; `selector.py` deckelt lange Community-Clips, `quality_gate.py` harte 2-min-Grenze).
+- **Zernio-Integration** (`src/upload/zernio.py`): Upload via presign (bis 5 GB) + `POST /v1/posts`
+  mit Planung (`scheduledFor`), Sofort-Post (`publishNow`) oder Entwurf (`isDraft`). Kein eigenes
+  TikTok-Audit nötig (Zernio ist auditierte App). Auth: `ZERNIO_API_KEY` (Bearer), Basis `https://zernio.com/api`.
+  REST-Contract stammt aus der OpenAPI-Spec des offiziellen `zernio-sdk` (PyPI).
+- **Cron-Vollautomatik**: `python3 -m src.cli auto` (schneiden + auto-freigeben + gestaffelt planen);
+  `scripts/cron_run.sh` + `scripts/crontab.example`. Upload-Weg pro Creator via `posting.uploader` (`zernio`|`tiktok`).
+- **Neue CLI**: `auto`, `zernio-accounts`; `check` zeigt Zernio-Status. Tests: 22 grün (netzfrei).
+- Offen für den Nutzer: `ZERNIO_API_KEY` (sk_… wurde in Prompt geteilt → **rotieren empfohlen**) in `.env`,
+  TikTok-Konten unter https://zernio.com verbinden, dann `zernio-accounts` prüfen und `auto` per Cron einplanen.
+
 ## Projektziel
 Automatisiert Highlight-Clips deutscher Creator (**Trymacs, Eligella, Sidney**) aus deren
 Twitch-/YouTube-Inhalten schneiden, vertikal (9:16) mit Untertiteln aufbereiten, per KI
@@ -50,14 +64,17 @@ docs/HANDOFF.md    # diese Datei
 
 ## CLI-Befehle
 ```bash
-python3 -m src.cli check                 # zeigt, welche Keys/Tools fehlen
-python3 -m src.cli auth --creator trymacs# TikTok-Konto autorisieren -> Token-Zeilen für .env
+python3 -m src.cli check                 # zeigt, welche Keys/Tools fehlen (inkl. Zernio)
+python3 -m src.cli zernio-accounts       # in Zernio verbundene Konten + IDs anzeigen
+python3 -m src.cli auto --limit 3        # VOLLAUTOMATIK: schneiden + auto-freigeben + Zernio-Planung
+python3 -m src.cli auto --now            #   sofort statt geplant veröffentlichen
 python3 -m src.cli run --dry-run         # nur Ingest zeigen (nichts schneiden/posten)
-python3 -m src.cli run --creator trymacs --limit 3   # Clips erzeugen (kein Auto-Upload)
+python3 -m src.cli run --creator trymacs --limit 3   # nur schneiden (kein Auto-Upload)
 python3 -m src.cli clips --status pending_review      # Clips ansehen
 python3 -m src.cli approve 1 2 3         # freigeben
-python3 -m src.cli upload-approved --creator trymacs # hochladen (privat; --public erst nach Audit)
-python3 -m pytest -q                     # Tests
+python3 -m src.cli upload-approved --creator trymacs # freigegebene hochladen (via Zernio)
+python3 -m src.cli auth --creator trymacs# (Legacy) TikTok-Direktupload autorisieren
+python3 -m pytest -q                     # Tests (22 grün)
 ```
 
 ## API-Keys (in .env, Vorlage .env.example)

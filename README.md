@@ -3,9 +3,13 @@
 Automatisierte Highlight-Clips deutscher Creator (**Trymacs · Eligella · Sidney**) für TikTok —
 als Partnermodell mit Einwilligung der Creator.
 
-**Pipeline:** Quellen überwachen (Twitch/YouTube) → Highlights erkennen → vertikal (9:16)
-schneiden + Untertitel + Creator-Credit → Texte & Hashtags per KI (Claude) → Qualitäts-/Review-Gate
-→ Upload (TikTok Content Posting API) → Analyse.
+**Pipeline:** Quellen überwachen (Twitch/YouTube) → Highlights erkennen → **1–2-Minuten**-Clips
+vertikal (9:16) schneiden + **Untertitel oben** + Creator-Credit → Texte & Hashtags per KI (Claude)
+→ Qualitäts-/Review-Gate → **Upload & Planung via [Zernio](https://zernio.com)** → Analyse.
+
+**Vollautomatik per Cron:** `scripts/cron_run.sh` schneidet regelmäßig neue Highlights und plant
+sie zeitlich gestaffelt über Zernio ein (kein eigenes TikTok-Audit nötig — Zernio ist die
+auditierte App).
 
 ➡️ Strategie & Hintergrund: **[`PLAN.md`](./PLAN.md)**
 
@@ -21,30 +25,42 @@ sudo apt-get install ffmpeg          # bzw. brew install ffmpeg
 # 2) Konfiguration
 cp config/creators.example.yaml config/creators.yaml   # Creator/Accounts anpassen
 cp .env.example .env                                    # API-Keys eintragen (s. u.)
+#   -> ZERNIO_API_KEY=sk_...  und  TWITCH_CLIENT_ID/SECRET  eintragen
 
 # 3) Prüfen, was noch fehlt (zeigt jeden Key einzeln an)
 python3 -m src.cli check
 
-# 3b) TikTok-Konten autorisieren -> erzeugt TIKTOK_ACCESS_TOKEN_<ID> zum Einfügen in .env
-#     (einmal pro Creator-Konto; öffnet den TikTok-Login)
-python3 -m src.cli auth --creator trymacs
+# 3b) TikTok-Konto(en) EINMALIG in Zernio verbinden: https://zernio.com
+#     dann die verbundenen Konten/IDs anzeigen (optional als zernio_account_id eintragen):
+python3 -m src.cli zernio-accounts
 
 # 4) Trockenlauf – zeigt nur, welche Quellen gefunden würden (nichts wird hochgeladen)
 python3 -m src.cli run --dry-run
 
-# 5) Echter Lauf für einen Creator (schneidet Clips, lädt NICHTS automatisch hoch)
-python3 -m src.cli run --creator trymacs --limit 3
+# 5) VOLLAUTOMATIK (für Crons): schneiden + auto-freigeben + via Zernio gestaffelt einplanen
+python3 -m src.cli auto --limit 3
+#   sofort statt geplant veröffentlichen:  python3 -m src.cli auto --now
 
-# 6) Review & Upload
+# --- oder halbautomatisch mit manueller Review ---
+python3 -m src.cli run --creator trymacs --limit 3    # nur schneiden (kein Upload)
 python3 -m src.cli clips --status pending_review      # erzeugte Clips ansehen
 python3 -m src.cli approve 1 2 3                       # freigeben
-python3 -m src.cli upload-approved --creator trymacs  # privat hochladen (vor Audit)
-# nach bestandenem TikTok-Audit zusätzlich: --public
+python3 -m src.cli upload-approved --creator trymacs  # freigegebene hochladen (via Zernio)
 ```
 
-> Sicher per Default: Clips landen in der Review-Queue (`pending_review`) und werden **nicht**
-> automatisch gepostet. Vollautomatik aktivierst du mit `run --auto-upload` (nur empfehlenswert,
-> wenn du der Trefferquote vertraust und Tokens vorliegen).
+> **Vollautomatik** (`auto`) gibt Clips automatisch frei und plant sie über Zernio ein.
+> Für manuelle Kontrolle stattdessen `run` + `approve` + `upload-approved` nutzen.
+> Privatsphäre steuerst du über `posting.privacy_level` (`PUBLIC_TO_EVERYONE` oder zum Testen `SELF_ONLY`).
+
+### ⏰ Cron einrichten (vollautomatisch)
+
+```bash
+crontab scripts/crontab.example     # Pfad in der Datei vorher anpassen!
+# oder manuell, z. B. 3x täglich:
+#   0 9,14,19 * * * /pfad/zum/repo/scripts/cron_run.sh
+```
+`scripts/cron_run.sh` ruft `python3 -m src.cli auto` auf und loggt nach `data/cron.log`.
+Steuerbar per Env: `CLIP_LIMIT`, `CREATOR`, `AUTO_FLAGS` (z. B. `--now`).
 
 ---
 
@@ -52,21 +68,27 @@ python3 -m src.cli upload-approved --creator trymacs  # privat hochladen (vor Au
 
 | Key | Wofür | Woher | Pflicht? |
 |---|---|---|---|
+| `ZERNIO_API_KEY` | **Upload & Planung auf TikTok** (empfohlener Weg) | https://zernio.com/dashboard/api-keys | **Ja** (zum Hochladen) |
 | `TWITCH_CLIENT_ID` / `TWITCH_CLIENT_SECRET` | Twitch-Clips & VODs abrufen | https://dev.twitch.tv/console/apps | **Ja** (Hauptquelle) |
 | `YOUTUBE_API_KEY` | neue YouTube-Uploads erkennen | https://console.cloud.google.com → „YouTube Data API v3" aktivieren → API-Key | Optional (nur mit `--youtube`) |
 | `ANTHROPIC_API_KEY` | Caption & Hashtags per Claude | https://console.anthropic.com | Empfohlen (ohne → Template-Texte) |
-| `TIKTOK_CLIENT_KEY` / `TIKTOK_CLIENT_SECRET` | App-Identität der TikTok-API | https://developers.tiktok.com → App → **Content Posting API** beantragen | **Ja** (zum Hochladen) |
-| `TIKTOK_REDIRECT_URI` | Login-Rückruf-Adresse | muss identisch im Developer Portal eingetragen sein (Default `http://localhost:8080/callback`) | **Ja** für `auth` |
-| `TIKTOK_ACCESS_TOKEN_<ID>` | Upload-Token pro Creator-Account (Scope `video.publish`) | **`python3 -m src.cli auth --creator <id>`** erzeugt es; `<ID>` = `id` aus `creators.yaml` (GROSS) | **Ja** (pro Konto) |
-| `TIKTOK_REFRESH_TOKEN_<ID>` | Token-Erneuerung | gleicher `auth`-Befehl | Empfohlen |
+| `TIKTOK_*` (Client Key/Secret, Access-Token) | **Legacy**-Direktupload ohne Zernio | https://developers.tiktok.com → **Content Posting API** (Audit 2–6 Wochen) | Optional (nur bei `posting.uploader: tiktok`) |
 
-> **Client Key/Secret ≠ Access Token.** Key/Secret (aus dem Portal) identifizieren deine *App*.
-> Der *Access Token* erlaubt das Posten auf *ein bestimmtes Konto* und entsteht erst durch den
-> Login dieses Kontos — dafür ist der Befehl `auth` da.
+### 🟢 Warum Zernio? (empfohlen)
 
-**Wichtig zu TikTok:** Die Freigabe der Content Posting API dauert i. d. R. **2–6 Wochen** (Audit).
-**Jetzt beantragen.** Vor dem Audit sind Uploads nur privat sichtbar (`SELF_ONLY`) — der Code
-nutzt das automatisch als Default; `--public` erst nach bestandenem Audit.
+[Zernio](https://zernio.com) ist eine **bereits von TikTok auditierte** App und postet in deinem
+Namen. Vorteile gegenüber dem TikTok-Direktupload:
+
+- **Kein eigenes Content-Posting-Audit** nötig (spart die 2–6 Wochen Wartezeit) → sofort **öffentlich** posten.
+- **Planung/Scheduling** eingebaut: Clips werden zeitlich gestaffelt eingeplant (`schedule_mode: spread`).
+- Ein Key für alle Konten; TikTok-Konten einmalig unter https://zernio.com verbinden.
+
+**So geht's:** Konto in Zernio verbinden → `ZERNIO_API_KEY` in `.env` → `python3 -m src.cli zernio-accounts`
+zeigt die verbundenen Konten. Der passende `@handle` in `creators.yaml` (`tiktok_account`) wird
+automatisch aufgelöst; alternativ `zernio_account_id` fest eintragen.
+
+> Der **Upload-Weg** ist pro Creator über `posting.uploader` steuerbar (`zernio` = Standard, `tiktok` = Legacy).
+> Der TikTok-Direktupload (`auth`, `TIKTOK_*`) bleibt als Alternative erhalten, ist aber **nicht** nötig, wenn du Zernio nutzt.
 
 **Was du NICHT als Key brauchst:** Download (`yt-dlp`) und Untertitel (`faster-whisper`) laufen
 lokal ohne Key. `ffmpeg` muss installiert sein.
@@ -82,13 +104,14 @@ src/
   db.py                # SQLite: Dedup + Clip-Status
   ingest/              # twitch.py · youtube.py · downloader.py (yt-dlp)
   highlight/           # audio_energy.py (Erkennung) · selector.py
-  edit/                # editor.py (ffmpeg 9:16) · subtitles.py (Whisper→ASS)
+  edit/                # editor.py (ffmpeg 9:16) · subtitles.py (Whisper→ASS, Text OBEN)
   metadata/            # generator.py (Claude → Caption/Hashtags, Fallback-Template)
-  review/              # quality_gate.py (Dedup, Länge, Review-Status)
-  upload/              # tiktok.py (Content Posting API, Direct Post)
+  review/              # quality_gate.py (Dedup, Länge 1–2 min, Review-Status)
+  upload/              # zernio.py (Zernio-Upload+Planung) · tiktok.py (Legacy-Direktupload)
   analytics/           # collector.py (Views/Engagement zurücklesen)
-  pipeline.py          # Orchestrator
-  cli.py               # Kommandozeile
+  pipeline.py          # Orchestrator (run, run_auto, Scheduling)
+  cli.py               # Kommandozeile (check, run, auto, zernio-accounts, …)
+scripts/               # cron_run.sh + crontab.example (Vollautomatik)
 tests/                 # Logik-Tests (ohne Netz/Keys):  python3 -m pytest -q
 config/creators.example.yaml
 ```
@@ -96,6 +119,8 @@ config/creators.example.yaml
 ## Status
 - [x] Projektplan (`PLAN.md`)
 - [x] Lauffähige Pipeline + CLI + Tests
-- [ ] `.env` mit echten API-Keys (siehe Tabelle oben)
+- [x] Clips 1–2 Minuten, Untertitel **oben**
+- [x] Zernio-Upload & -Planung + Cron-Vollautomatik (`auto`, `scripts/cron_run.sh`)
+- [ ] `.env` mit echten API-Keys (`ZERNIO_API_KEY`, `TWITCH_*` …)
+- [ ] TikTok-Konten in Zernio verbunden (https://zernio.com)
 - [ ] Creator-Vereinbarungen (schriftlich)
-- [ ] TikTok Content Posting API beantragt (Audit 2–6 Wochen)

@@ -1,11 +1,21 @@
-"""Untertitel via faster-whisper -> ASS (gebrannt im TikTok-Stil)."""
+"""Untertitel via faster-whisper -> ASS (gebrannt im TikTok-Stil).
+
+Die gesprochenen Texte werden standardmäßig OBEN im Video eingeblendet
+(`position="top"`). Über `position` lässt sich das umstellen (top|middle|bottom).
+"""
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 # (start, end, text)
 TranscriptSegment = Tuple[float, float, str]
+
+# ASS-Alignment (Numpad-Schema): 8 = oben-mitte, 5 = mitte, 2 = unten-mitte.
+_ALIGN = {"top": 8, "middle": 5, "center": 5, "bottom": 2}
+# Sinnvoller vertikaler Rand je Position (px bei PlayResY=1920).
+# Oben etwas Abstand zur Handy-Statusleiste, unten Abstand zur TikTok-UI.
+_DEFAULT_MARGIN = {"top": 230, "middle": 0, "center": 0, "bottom": 300}
 
 
 def transcribe(path: str, language: str = "de", model_size: str = "small") -> List[TranscriptSegment]:
@@ -25,7 +35,8 @@ def _ass_time(t: float) -> str:
     return f"{h:d}:{m:02d}:{s:02d}.{cs:02d}"
 
 
-ASS_HEADER = """[Script Info]
+# Alignment + MarginV werden je nach Position eingesetzt (siehe build_header).
+ASS_HEADER_TMPL = """[Script Info]
 ScriptType: v4.00+
 PlayResX: 1080
 PlayResY: 1920
@@ -33,15 +44,32 @@ WrapStyle: 2
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, BackColour, Bold, Italic, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Pop,Arial,72,&H00FFFFFF,&H00000000,&H00000000,-1,0,1,6,2,2,60,60,300,1
+Style: Pop,Arial,72,&H00FFFFFF,&H00000000,&H00000000,-1,0,1,6,2,{alignment},60,60,{margin_v},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
 
 
-def write_ass(segments: List[TranscriptSegment], out_path: str) -> str:
-    lines = [ASS_HEADER]
+def resolve_alignment(position: str) -> int:
+    """Position (top|middle|bottom) -> ASS-Alignment-Wert."""
+    return _ALIGN.get((position or "top").lower(), 8)
+
+
+def build_header(position: str = "top", margin_v: Optional[int] = None) -> str:
+    pos = (position or "top").lower()
+    align = resolve_alignment(pos)
+    mv = _DEFAULT_MARGIN.get(pos, 230) if margin_v is None else int(margin_v)
+    return ASS_HEADER_TMPL.format(alignment=align, margin_v=mv)
+
+
+def write_ass(
+    segments: List[TranscriptSegment],
+    out_path: str,
+    position: str = "top",
+    margin_v: Optional[int] = None,
+) -> str:
+    lines = [build_header(position, margin_v)]
     for start, end, text in segments:
         safe = text.replace("\n", " ").replace("{", "(").replace("}", ")")
         lines.append(

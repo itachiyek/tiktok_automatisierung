@@ -16,8 +16,9 @@ def check(conn, clip: Clip, clip_cfg: dict) -> Tuple[bool, str]:
         return False, "Datei zu klein / Render fehlgeschlagen"
 
     dur = clip.segment.duration
-    min_d = float(clip_cfg.get("min_duration_sec", 61)) * 0.6
-    max_d = float(clip_cfg.get("max_duration_sec", 90)) * 1.5
+    min_d = float(clip_cfg.get("min_duration_sec", 60)) * 0.6
+    # Harte Obergrenze bei max_duration (+3 s Encoder-Toleranz) -> bleibt im 1–2-min-Fenster.
+    max_d = float(clip_cfg.get("max_duration_sec", 120)) + 3.0
     if dur < min_d:
         return False, f"zu kurz ({dur:.0f}s)"
     if dur > max_d:
@@ -28,6 +29,11 @@ def check(conn, clip: Clip, clip_cfg: dict) -> Tuple[bool, str]:
     return True, "ok"
 
 
-def decide_status(clip_cfg: dict) -> str:
-    """pending_review wenn manuelle Freigabe verlangt wird, sonst approved."""
+def decide_status(clip_cfg: dict, auto_approve: bool = False) -> str:
+    """pending_review wenn manuelle Freigabe verlangt wird, sonst approved.
+
+    `auto_approve=True` (z. B. im Cron-`auto`-Lauf) überschreibt die Review-Pflicht.
+    """
+    if auto_approve:
+        return "approved"
     return "pending_review" if clip_cfg.get("require_human_review", True) else "approved"

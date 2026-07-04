@@ -1,0 +1,15 @@
+# Beispiel-Crontab für die automatisierte TikTok-Clip-Pipeline.
+# Installieren mit:   crontab scripts/crontab.example
+# (oder Zeilen per `crontab -e` einfügen und PFAD anpassen)
+#
+# Voraussetzung: .env ist gefüllt (ZERNIO_API_KEY, TWITCH_*), Konten in Zernio verbunden.
+# Alle Zeiten in der Server-Zeitzone. Logs landen in data/cron.log.
+
+# 3x täglich Highlights schneiden (1–2 min) und gestaffelt via Zernio einplanen:
+0 9,14,19 * * * /ABSOLUTER/PFAD/zum/repo/scripts/cron_run.sh
+
+# Nur ein Creator, stündlich, sofort veröffentlichen statt planen (Beispiel):
+# 0 * * * * CREATOR=trymacs AUTO_FLAGS="--now" /ABSOLUTER/PFAD/zum/repo/scripts/cron_run.sh
+
+# Mehr Quellen pro Lauf (Beispiel):
+# 0 12 * * * CLIP_LIMIT=5 /ABSOLUTER/PFAD/zum/repo/scripts/cron_run.sh

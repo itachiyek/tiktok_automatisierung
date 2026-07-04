@@ -66,6 +66,7 @@ class Clip:
     segment: Segment
     path: str = ""
     meta: Optional[ClipMeta] = None
-    status: str = "new"  # new | pending_review | approved | uploaded | failed
+    # new | pending_review | approved | scheduled | draft | uploaded | failed
+    status: str = "new"
     tiktok_id: str = ""
     id: Optional[int] = None

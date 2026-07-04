@@ -16,6 +16,8 @@ creators:
         channel_id: "UC_XXXXXXXXXXXXXXXXXXXXXX"   # Haupt-Channel-ID eintragen
         monitor_uploads: true
     tiktok_account: "@trymacs.clips"
+    # zernio_account_id: ""      # optional: exakte Zernio-Konto-ID (sonst per @handle aufgelöst)
+    #                            #   -> IDs zeigen:  python3 -m src.cli zernio-accounts
     style:
       language: de
       niche: [gaming, eafc, reaction, entertainment]
@@ -60,11 +62,23 @@ creators:
 # Globale Defaults für alle Creator (überschreibbar pro Creator)
 defaults:
   clip:
-    min_duration_sec: 61       # > 60 Sek. wegen TikTok Creator Rewards
-    max_duration_sec: 90
+    min_duration_sec: 60       # untere Grenze (> 60 s ideal für TikTok Creator Rewards)
+    max_duration_sec: 120      # Obergrenze -> Clips bleiben im 1–2-Minuten-Fenster
+    target_duration_sec: 90    # Ziel-Länge der Highlight-Ausschnitte (1,5 min)
     aspect_ratio: "9:16"
+    reframe_mode: blur_pad     # blur_pad | crop
     burn_subtitles: true
+    subtitle_position: top     # gesprochene Texte OBEN einblenden (top|middle|bottom)
     show_creator_credit: true  # faire Namensnennung; kein fremdes Wasserzeichen einbrennen
+    max_clips_per_source: 3
+    min_gap_sec: 60
   posting:
-    per_account_per_day: 2
-    require_human_review: true # zu Beginn manuelle Freigabe (später lockern)
+    uploader: zernio                     # zernio (empfohlen) | tiktok (Legacy-Direktupload)
+    privacy_level: PUBLIC_TO_EVERYONE    # via Zernio kein eigenes TikTok-Audit nötig
+    #                                    #   Zum Testen privat: SELF_ONLY
+    schedule_mode: spread                # spread (gestaffelt planen) | now (sofort) | draft
+    per_account_per_day: 3               # max. Clips pro Lauf/Konto
+    first_delay_min: 20                  # erster geplanter Post: +20 min
+    spacing_min: 180                     # Abstand zwischen geplanten Posts (3 h)
+    timezone: Europe/Berlin
+    require_human_review: false          # 'auto'-Lauf gibt ohnehin automatisch frei

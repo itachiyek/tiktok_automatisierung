@@ -101,10 +101,14 @@ def make_clip(
 
     ass_path = None
     if clip_cfg.get("burn_subtitles", True):
+        # Gesprochene Texte standardmäßig OBEN einblenden (konfigurierbar).
+        position = clip_cfg.get("subtitle_position", "top")
         try:
             tr = subtitles.transcribe(inter, language=language)
             if tr:
-                ass_path = subtitles.write_ass(tr, str(work / f"{basename}.ass"))
+                ass_path = subtitles.write_ass(
+                    tr, str(work / f"{basename}.ass"), position=position
+                )
         except Exception:
             ass_path = None  # Untertitel optional – Clip trotzdem erzeugen
 

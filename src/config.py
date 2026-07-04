@@ -38,6 +38,8 @@ class Creator:
         self.style: dict = raw.get("style", {})
         self.clip: dict = {**defaults.get("clip", {}), **raw.get("clip", {})}
         self.posting: dict = {**defaults.get("posting", {}), **raw.get("posting", {})}
+        # Optionale, in Zernio verbundene Account-ID (sonst per @handle aufgelöst).
+        self._zernio_account_id: str = raw.get("zernio_account_id", "") or ""
 
     # --- Quellen-Shortcuts ---
     @property
@@ -50,6 +52,19 @@ class Creator:
 
     def tiktok_access_token(self) -> Optional[str]:
         return os.environ.get(f"TIKTOK_ACCESS_TOKEN_{self.id.upper()}")
+
+    def zernio_account_id(self) -> Optional[str]:
+        """Zernio-Account-ID: aus creators.yaml oder Env ZERNIO_ACCOUNT_ID_<ID>."""
+        return self._zernio_account_id or os.environ.get(
+            f"ZERNIO_ACCOUNT_ID_{self.id.upper()}"
+        )
+
+    def uploader(self) -> str:
+        """Welcher Upload-Weg: 'zernio' (Standard, wenn Key vorhanden) oder 'tiktok'."""
+        configured = (self.posting.get("uploader") or "").lower()
+        if configured:
+            return configured
+        return "zernio" if zernio_api_key() else "tiktok"
 
     def __repr__(self) -> str:
         return f"<Creator {self.id} consent={self.consent}>"
@@ -106,6 +121,15 @@ def anthropic_model() -> str:
 
 def tiktok_credentials() -> tuple[Optional[str], Optional[str]]:
     return os.environ.get("TIKTOK_CLIENT_KEY"), os.environ.get("TIKTOK_CLIENT_SECRET")
+
+
+def zernio_api_key() -> Optional[str]:
+    return os.environ.get("ZERNIO_API_KEY")
+
+
+def zernio_base_url() -> str:
+    # Basis inkl. /api; Endpunkte sind /v1/...  -> https://zernio.com/api/v1/...
+    return os.environ.get("ZERNIO_BASE_URL", "https://zernio.com/api")
 
 
 def tiktok_redirect_uri() -> str:
