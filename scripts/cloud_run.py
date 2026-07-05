@@ -105,6 +105,8 @@ def main(argv=None) -> int:
     ap.add_argument("--per-source", type=int, default=2, help="Quellen (VODs) je Creator-Versuch")
     ap.add_argument("--privacy", default="PUBLIC_TO_EVERYONE")
     ap.add_argument("--no-schedule", action="store_true", help="nur produzieren, nicht in Zernio einplanen (Test)")
+    ap.add_argument("--now", action="store_true", help="EINEN frischen Clip erzeugen (falls Puffer leer) und SOFORT posten")
+    ap.add_argument("--no-post", action="store_true", help="mit --now: nur produzieren/zeigen, nicht posten (Test)")
     args = ap.parse_args(argv)
 
     load_env()
@@ -113,6 +115,45 @@ def main(argv=None) -> int:
     cfg = load_config()
     ids = [c.id for c in cfg.creators if c.consent]
     ledger = _load(LEDGER, {"posted": []})
+
+    # --- STÜNDLICH: einen frischen Clip erzeugen (falls Puffer leer) und sofort posten ---
+    if args.now:
+        attempts = 0
+        # Produzieren, bis mind. 1 ungeposteter Clip da ist (Puffer deckt ~2 Std., spart CI-Zeit)
+        while len(unscheduled_clips(ledger)) < 1 and attempts < len(ids):
+            cid = _rotate_creator(ids)
+            print(f"[cloud] Produktion: {cid}")
+            try:
+                pipeline.run(creator_id=cid, include_vods=True, include_clips=False,
+                             include_youtube=False, limit=1, auto_upload=False)
+            except Exception as exc:  # noqa
+                print(f"[cloud] Produktion {cid} Fehler: {exc}")
+            attempts += 1
+
+        clips = unscheduled_clips(ledger)
+        if not clips:
+            print("[cloud] kein Clip verfügbar (keine VODs?).")
+            return 0
+        mp4 = clips[0]
+        txt = mp4.with_suffix(".txt")
+        caption = txt.read_text(encoding="utf-8").strip() if txt.exists() else mp4.stem
+        print(f"[cloud] naechster Clip: {mp4.name}")
+        if args.no_post:
+            print(f"  (no-post) Caption: {caption.splitlines()[0][:70]}")
+            return 0
+        client = ZernioClient(api_key_from_env())
+        acct = client.tiktok_account()
+        res = client.post_video(str(mp4), caption, acct["_id"], schedule_iso=None, privacy=args.privacy)
+        post = res.get("post", res)
+        pid = post.get("_id") or "?"
+        status = post.get("status") or "eingereicht"
+        ledger.setdefault("posted", []).append({
+            "file": mp4.name, "posted_utc": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "post_id": pid, "status": status, "account": acct.get("displayName"),
+        })
+        _save(LEDGER, ledger)
+        print(f"[cloud] ✓ SOFORT gepostet: {mp4.name} -> {acct.get('displayName')} (post {pid}, {status})")
+        return 0
 
     have = future_count(ledger)
     need = max(0, min(args.target - have, args.max_new))

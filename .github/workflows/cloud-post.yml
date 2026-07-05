@@ -1,23 +1,20 @@
 name: cloud-post
 
-# Produziert in der Cloud Twitch-Clips und plant sie in Zernio ein.
-# Zernio postet sie dann selbst zur Uhrzeit -> PC aus, nichts zu tun.
+# Stündlich: einen frischen Twitch-Clip erzeugen und SOFORT über Zernio posten.
+# Läuft komplett in der Cloud -> PC aus, nichts zu tun.
 on:
   workflow_dispatch:
     inputs:
-      schedule:
-        description: "In Zernio einplanen? (false = nur Produktion testen)"
+      test:
+        description: "Testlauf OHNE Posten (nur produzieren)?"
         type: boolean
         default: false
-      max_new:
-        description: "max. neue Clips pro Lauf"
-        default: "2"
-  # Zeitplan wird nach erfolgreichem Test aktiviert:
-  # schedule:
-  #   - cron: "0 4 * * *"   # taeglich 06:00 Europe/Berlin (=04:00 UTC), fuellt den Tagesvorrat
+  schedule:
+    # Stündlich 07–22 Uhr Europe/Berlin (Sommerzeit = UTC+2 -> 05–20 UTC).
+    - cron: "0 5-20 * * *"
 
 permissions:
-  contents: write   # State (DB/Ledger) zurueck ins Repo committen
+  contents: write   # State (Dedup-DB/Ledger) zurueck ins Repo
 
 concurrency:
   group: cloud-post
@@ -26,7 +23,7 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
 
@@ -34,7 +31,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: System-Deps (ffmpeg)
+      - name: ffmpeg
         run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
 
       - name: Whisper-Modell cachen
@@ -43,20 +40,25 @@ jobs:
           path: ~/.cache/huggingface
           key: whisper-small-v1
 
+      - name: Pip cachen
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ hashFiles('requirements.txt') }}
+
       - name: Python-Deps
         run: |
-          python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install -U yt-dlp
 
-      - name: Produzieren (+ ggf. einplanen)
+      - name: Einen Clip erzeugen + sofort posten
         env:
           ZERNIO_API_KEY: ${{ secrets.ZERNIO_API_KEY }}
         run: |
-          if [ "${{ inputs.schedule }}" = "true" ]; then
-            python scripts/cloud_run.py --target 24 --max-new "${{ inputs.max_new }}"
+          if [ "${{ inputs.test }}" = "true" ]; then
+            python scripts/cloud_run.py --now --no-post
           else
-            python scripts/cloud_run.py --no-schedule --max-new "${{ inputs.max_new }}"
+            python scripts/cloud_run.py --now
           fi
 
       - name: State zurueck ins Repo
