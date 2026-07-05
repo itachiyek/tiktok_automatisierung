@@ -26,7 +26,8 @@ def download(
 
     ydl_opts = {
         "outtmpl": str(out_dir / f"{basename}.%(ext)s"),
-        "format": "bv*[height<=1080]+ba/b[height<=1080]/best",
+        # 720p reicht fürs 9:16-TikTok und macht Cloud-Läufe deutlich schneller/leichter.
+        "format": "bv*[height<=720]+ba/b[height<=720]/best",
         "merge_output_format": "mp4",
         "quiet": True,
         "no_warnings": True,
