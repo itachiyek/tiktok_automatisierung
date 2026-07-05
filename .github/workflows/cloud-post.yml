@@ -45,14 +45,15 @@ jobs:
           pip install -r requirements.txt
           pip install -U yt-dlp
 
-      - name: Einen Clip erzeugen + sofort posten
+      - name: Warteschlange auffuellen (produzieren + in Zernio einplanen)
         env:
           ZERNIO_API_KEY: ${{ secrets.ZERNIO_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           if [ "${{ inputs.test }}" = "true" ]; then
-            python scripts/cloud_run.py --now --no-post
+            python scripts/cloud_run.py --no-schedule --target 10 --max-new 4
           else
-            python scripts/cloud_run.py --now
+            python scripts/cloud_run.py --target 10 --max-new 6
           fi
 
       - name: State zurueck ins Repo

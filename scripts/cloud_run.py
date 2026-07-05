@@ -81,6 +81,22 @@ def last_scheduled(ledger: dict) -> datetime:
     return max(now, dt)
 
 
+def zernio_queue(client) -> tuple[int, datetime]:
+    """Aus Zernio: (Anzahl noch geplanter Posts in der Zukunft, spätester Slot)."""
+    now = datetime.now(UTC)
+    future = []
+    for p in client.list_posts():
+        if p.get("status") != "scheduled" or not p.get("scheduledFor"):
+            continue
+        try:
+            dt = datetime.strptime(p["scheduledFor"][:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=UTC)
+        except Exception:
+            continue
+        if dt > now:
+            future.append(dt)
+    return len(future), (max(future) if future else now)
+
+
 def next_slots(count: int, not_before: datetime) -> list[str]:
     """`count` stündliche Slots 07–22 Uhr (Berlin) nach `not_before`, als UTC-ISO."""
     start_berlin = not_before.astimezone(BERLIN)
@@ -155,9 +171,17 @@ def main(argv=None) -> int:
         print(f"[cloud] ✓ SOFORT gepostet: {mp4.name} -> {acct.get('displayName')} (post {pid}, {status})")
         return 0
 
-    have = future_count(ledger)
+    # Zernios Warteschlange ist die Wahrheit: wie viele Posts sind noch geplant?
+    client = ZernioClient(api_key_from_env())
+    acct = client.tiktok_account()
+    aid = acct["_id"]
+    have, last = zernio_queue(client)
     need = max(0, min(args.target - have, args.max_new))
-    print(f"[cloud] geplanter Vorrat: {have} | Ziel: {args.target} | erzeuge bis zu: {need}")
+    print(f"[cloud] Zernio-Warteschlange: {have} geplant | Ziel: {args.target} | fülle bis zu: {need}")
+
+    if need <= 0:
+        print("[cloud] Warteschlange voll – nichts zu tun.")
+        return 0
 
     # 1) Produzieren, bis genug ungeplante Clips da sind (oder Rotation erschöpft)
     attempts = 0
@@ -181,11 +205,8 @@ def main(argv=None) -> int:
             print("   +", p.name)
         return 0
 
-    # 2) In Zernio einplanen (hinter den letzten geplanten Slot)
-    client = ZernioClient(api_key_from_env())
-    acct = client.tiktok_account()
-    aid = acct["_id"]
-    slots = next_slots(len(clips), last_scheduled(ledger))
+    # 2) In Zernio einplanen – stündlich hinter den spätesten bereits geplanten Slot
+    slots = next_slots(len(clips), last)
     ok = 0
     for mp4, slot in zip(clips, slots):
         txt = mp4.with_suffix(".txt")

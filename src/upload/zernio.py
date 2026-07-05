@@ -124,6 +124,12 @@ class ZernioClient:
         r.raise_for_status()
         return r.json()
 
+    def list_posts(self) -> list[dict]:
+        r = self._requests().get(f"{BASE}/posts", headers=self._headers(), timeout=30)
+        r.raise_for_status()
+        d = r.json()
+        return d.get("posts") or d.get("data") or (d if isinstance(d, list) else [])
+
     # --- Convenience ------------------------------------------------------
     def post_video(
         self,
