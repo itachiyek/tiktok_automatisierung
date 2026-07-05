@@ -16,8 +16,11 @@ import sys
 
 from . import db, pipeline
 from .config import (
+    active_llm_provider,
     anthropic_api_key,
     load_config,
+    load_env,
+    openai_api_key,
     tiktok_credentials,
     tiktok_redirect_uri,
     twitch_credentials,
@@ -36,7 +39,11 @@ def cmd_check(args) -> int:
     tcid, tsec = twitch_credentials()
     _status("Twitch CLIENT_ID/SECRET", bool(tcid and tsec), "TWITCH_CLIENT_ID / TWITCH_CLIENT_SECRET in .env")
     _status("YouTube API-Key", bool(youtube_api_key()), "YOUTUBE_API_KEY in .env (optional, nur für YT-Uploads)")
-    _status("Anthropic API-Key", bool(anthropic_api_key()), "ANTHROPIC_API_KEY in .env (sonst Template-Texte)")
+    _status("OpenAI API-Key", bool(openai_api_key()), "OPENAI_API_KEY in .env (sonst Template-Texte)")
+    _status("Anthropic API-Key", bool(anthropic_api_key()), "ANTHROPIC_API_KEY in .env (optional, Alternative zu OpenAI)")
+    prov = active_llm_provider()
+    _status(f"LLM aktiv: {prov or 'kein Key -> Template-Texte'}", bool(prov),
+            "OPENAI_API_KEY oder ANTHROPIC_API_KEY setzen; Wahl via LLM_PROVIDER")
     kcid, ksec = tiktok_credentials()
     _status("TikTok CLIENT_KEY/SECRET", bool(kcid and ksec), "TIKTOK_CLIENT_KEY / TIKTOK_CLIENT_SECRET in .env")
 
@@ -76,6 +83,7 @@ def cmd_run(args) -> int:
         include_vods=args.vods,
         include_youtube=args.youtube,
         auto_upload=args.auto_upload,
+        include_clips=not args.no_clips,
     )
     return 0
 
@@ -137,6 +145,7 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--limit", type=int, default=3, help="max. Quellen pro Creator")
     r.add_argument("--dry-run", action="store_true", help="nur Ingest zeigen, nichts schneiden/hochladen")
     r.add_argument("--vods", action="store_true", help="auch volle Twitch-VODs analysieren")
+    r.add_argument("--no-clips", action="store_true", help="Community-Clips überspringen (nur VODs/YouTube)")
     r.add_argument("--youtube", action="store_true", help="auch neue YouTube-Uploads")
     r.add_argument("--auto-upload", action="store_true", help="freigegebene Clips direkt hochladen")
     r.set_defaults(func=cmd_run)
@@ -163,6 +172,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv=None) -> int:
+    load_env()  # .env früh laden, damit alle Befehle die Keys sehen
     args = build_parser().parse_args(argv)
     return args.func(args)
 

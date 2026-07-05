@@ -1,0 +1,73 @@
+name: cloud-post
+
+# Produziert in der Cloud Twitch-Clips und plant sie in Zernio ein.
+# Zernio postet sie dann selbst zur Uhrzeit -> PC aus, nichts zu tun.
+on:
+  workflow_dispatch:
+    inputs:
+      schedule:
+        description: "In Zernio einplanen? (false = nur Produktion testen)"
+        type: boolean
+        default: false
+      max_new:
+        description: "max. neue Clips pro Lauf"
+        default: "2"
+  # Zeitplan wird nach erfolgreichem Test aktiviert:
+  # schedule:
+  #   - cron: "0 4 * * *"   # taeglich 06:00 Europe/Berlin (=04:00 UTC), fuellt den Tagesvorrat
+
+permissions:
+  contents: write   # State (DB/Ledger) zurueck ins Repo committen
+
+concurrency:
+  group: cloud-post
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: System-Deps (ffmpeg)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+
+      - name: Whisper-Modell cachen
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: whisper-small-v1
+
+      - name: Python-Deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -U yt-dlp
+
+      - name: Produzieren (+ ggf. einplanen)
+        env:
+          ZERNIO_API_KEY: ${{ secrets.ZERNIO_API_KEY }}
+        run: |
+          if [ "${{ inputs.schedule }}" = "true" ]; then
+            python scripts/cloud_run.py --target 24 --max-new "${{ inputs.max_new }}"
+          else
+            python scripts/cloud_run.py --no-schedule --max-new "${{ inputs.max_new }}"
+          fi
+
+      - name: State zurueck ins Repo
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -f data/clips.db data/posted_log.json data/rotation_state.json 2>/dev/null || true
+          if git diff --cached --quiet; then
+            echo "kein State-Update"
+          else
+            git commit -m "cloud: state update [skip ci]"
+            git push
+          fi

@@ -1,84 +1,82 @@
-"""YouTube Data API v3: neue Uploads eines Kanals erkennen."""
+"""YouTube-Ingest über yt-dlp – neue Uploads eines Kanals erkennen (KEIN API-Key nötig).
+
+Früher lief das über die YouTube Data API v3 (brauchte YOUTUBE_API_KEY + Quota).
+Jetzt per yt-dlp (dasselbe Tool wie beim Download): liest den /videos-Tab eines
+Kanals flat aus. yt-dlp liefert dabei Video-ID, Titel und Dauer, aber KEINE
+View-Counts – deshalb Ranking nach Aktualität (neueste zuerst) statt nach Views.
+Der Dauer-Filter wirft Shorts/zu kurze Videos raus (ergeben keine >=60s-Clips).
+"""
 from __future__ import annotations
 
-import re
+import json
+import subprocess
+import sys
 from typing import Optional
 
 from ..models import SourceItem, YOUTUBE
 
-API = "https://www.googleapis.com/youtube/v3"
-
 
 class YouTubeClient:
-    def __init__(self, api_key: str):
-        if not api_key:
-            raise ValueError("YOUTUBE_API_KEY fehlt.")
+    def __init__(self, api_key: str = ""):
+        # api_key wird nicht mehr benötigt (yt-dlp), Parameter bleibt für Kompatibilität.
         self.api_key = api_key
 
-    @staticmethod
-    def _requests():
-        import requests  # lazy
-
-        return requests
-
-    def _get(self, path: str, params: dict) -> dict:
-        params = {**params, "key": self.api_key}
-        r = self._requests().get(f"{API}/{path}", params=params, timeout=30)
-        r.raise_for_status()
-        return r.json()
-
     def get_recent_uploads(
-        self, channel_id: str, limit: int = 5, published_after: Optional[str] = None
+        self,
+        channel_id: str,
+        limit: int = 5,
+        published_after: Optional[str] = None,  # (ungenutzt; Signatur beibehalten)
+        rank_by_views: bool = True,             # (ohne API keine Views -> Aktualitäts-Ranking)
+        min_duration_sec: float = 90.0,
     ) -> list[SourceItem]:
+        """Neueste Quell-Videos eines Kanals (Shorts gefiltert), neueste zuerst."""
         if not channel_id or channel_id.startswith("UC_X"):
             return []  # Platzhalter-ID in der Beispiel-Config
-        params = {
-            "part": "snippet",
-            "channelId": channel_id,
-            "order": "date",
-            "type": "video",
-            "maxResults": min(limit, 50),
-        }
-        if published_after:
-            params["publishedAfter"] = published_after
-        results = self._get("search", params).get("items", [])
-        ids = [r["id"]["videoId"] for r in results if r.get("id", {}).get("videoId")]
-        durations = self._durations(ids)
-        items = []
-        for r in results:
-            vid = r.get("id", {}).get("videoId")
+        pool = min(50, max(limit * 4, 20))
+        url = f"https://www.youtube.com/channel/{channel_id}/videos"
+        # Auflisten läuft cookie-frei (robust); nur der Download (downloader.py)
+        # braucht Cookies.
+        cmd = [
+            sys.executable, "-m", "yt_dlp", "-J", "--flat-playlist", "--no-warnings",
+            "--playlist-end", str(pool), url,
+        ]
+        try:
+            proc = subprocess.run(
+                cmd, capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=120,
+            )
+        except FileNotFoundError:
+            raise RuntimeError("yt-dlp nicht gefunden (PATH).")
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(f"yt-dlp Timeout beim Kanal-Abruf ({channel_id}).")
+        if proc.returncode != 0 or not (proc.stdout or "").strip():
+            raise RuntimeError(f"yt-dlp Fehler ({channel_id}): {(proc.stderr or '')[:300]}")
+
+        data = json.loads(proc.stdout)
+        entries = data.get("entries") or []
+        items: list[SourceItem] = []
+        for e in entries:
+            vid = e.get("id")
             if not vid:
                 continue
-            sn = r["snippet"]
+            dur = float(e.get("duration") or 0.0)
+            if dur and dur < min_duration_sec:  # Shorts/zu kurz überspringen
+                continue
+            views = e.get("view_count")
             items.append(
                 SourceItem(
                     creator_id=channel_id,
                     platform=YOUTUBE,
-                    source_id=vid,
-                    title=sn.get("title", ""),
-                    url=f"https://www.youtube.com/watch?v={vid}",
-                    duration_sec=durations.get(vid, 0.0),
-                    created_at=sn.get("publishedAt", ""),
+                    source_id=vid,  # -> key "youtube:<id>" (Dedup-kompatibel)
+                    title=e.get("title") or "",
+                    url=e.get("url") or f"https://www.youtube.com/watch?v={vid}",
+                    duration_sec=dur,
+                    created_at="",
+                    extra={"view_count": int(views) if views else 0},
                 )
             )
-        return items
-
-    def _durations(self, video_ids: list[str]) -> dict[str, float]:
-        if not video_ids:
-            return {}
-        data = self._get(
-            "videos", {"part": "contentDetails", "id": ",".join(video_ids)}
-        ).get("items", [])
-        return {
-            it["id"]: _parse_iso8601_duration(it["contentDetails"]["duration"])
-            for it in data
-        }
-
-
-def _parse_iso8601_duration(s: str) -> float:
-    """'PT1H2M3S' -> Sekunden."""
-    m = re.match(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?", s or "")
-    if not m:
-        return 0.0
-    h, mi, se = (int(x) if x else 0 for x in m.groups())
-    return float(h * 3600 + mi * 60 + se)
+        # Falls yt-dlp doch View-Counts liefert, danach ranken; sonst bleibt
+        # die yt-dlp-Reihenfolge (= neueste zuerst) stabil erhalten.
+        if rank_by_views and any(s.extra.get("view_count") for s in items):
+            items.sort(key=lambda s: s.extra.get("view_count", 0), reverse=True)
+        return items[:limit]

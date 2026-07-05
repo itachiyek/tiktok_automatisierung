@@ -1,24 +1,39 @@
-"""Erzeugt deutsche Caption + Hashtags via Claude (Fallback ohne Key: Template)."""
+"""Erzeugt deutsche Caption + Hashtags via LLM (OpenAI oder Claude).
+
+Anbieter wird über LLM_PROVIDER gesteuert (auto|openai|anthropic). Ohne
+nutzbaren API-Key wird ein Template-Fallback verwendet.
+"""
 from __future__ import annotations
 
 import json
 from typing import Optional
 
-from ..config import anthropic_api_key, anthropic_model
+from ..config import (
+    active_llm_provider,
+    anthropic_api_key,
+    anthropic_model,
+    openai_api_key,
+    openai_model,
+)
 from ..models import ClipMeta, SourceItem
 
-PROMPT = """Du bist Social-Media-Manager für virale deutsche TikTok-Clips.
-Creator: {name}
+PROMPT = """Du betreibst einen deutschen TikTok-CLIP-Account, der Highlights des Creators {name} postet.
+Du bist NICHT {name} selbst – schreibe aus Sicht des Clip-Accounts in der DRITTEN Person ÜBER {name}.
 Nische: {niche}
 Ton: {tone}
 Video-Titel (Quelle): {title}
 {transcript_block}
-Erstelle Metadaten für EINEN TikTok-Clip dieses Creators. Auf Deutsch, jugendlich,
-mit starkem Hook in der ersten Zeile. Keine Clickbait-Lügen, kein fremdes Branding.
+Erstelle Metadaten für EINEN TikTok-Clip von {name}. Auf Deutsch, in der DRITTEN Person über {name}
+mit Namen (niemals "ich"/"mein"). Kein Clickbait, kein fremdes Branding.
+
+Stil der caption: SEHR KURZ und locker – 1 knapper Satz (ca. 3-8 Wörter), natürlich, fast beiläufig.
+KEIN Cringe, KEINE übertriebenen Hype-Wörter (nicht "krass/Wahnsinn/legendär/episch/crazy"),
+höchstens 1 Emoji, oft auch gar keins. Beispiele: "Trymacs bei Deutschland gegen Paraguay" /
+"EliasN97 holt seinen neuen Lambo ab".
 
 Antworte AUSSCHLIESSLICH als JSON:
 {{"title": "...", "caption": "...", "hashtags": ["#...", "#..."]}}
-- caption: 1-2 Sätze, hooky.
+- caption: kurz, 1 Satz, dritte Person über {name}, max. 1 Emoji.
 - hashtags: 5-8 Stück, gemischt aus Creator-/Nischen-/Trend-Tags, inkl. #fyp.
 """
 
@@ -58,28 +73,53 @@ def _fallback(creator_style: dict, name: str, source: SourceItem) -> ClipMeta:
     return ClipMeta(title=source.title or f"{name} Highlight", caption=caption, hashtags=tags[:8])
 
 
-def generate(creator_style: dict, name: str, source: SourceItem, transcript: Optional[str] = None) -> ClipMeta:
-    key = anthropic_api_key()
-    if not key:
-        return _fallback(creator_style, name, source)
-    try:
-        import anthropic  # lazy
+def _meta_from_data(data: dict, name: str, source: SourceItem) -> Optional[ClipMeta]:
+    if not data.get("caption"):
+        return None
+    tags = data.get("hashtags", []) or []
+    return ClipMeta(
+        title=data.get("title", source.title or name),
+        caption=data["caption"],
+        hashtags=[t if t.startswith("#") else f"#{t}" for t in tags],
+    )
 
-        client = anthropic.Anthropic(api_key=key)
-        resp = client.messages.create(
-            model=anthropic_model(),
-            max_tokens=600,
-            messages=[{"role": "user", "content": _build_prompt(creator_style, name, source, transcript)}],
-        )
-        text = "".join(getattr(b, "text", "") for b in resp.content)
-        data = _parse_json(text)
-        if data.get("caption"):
-            tags = data.get("hashtags", []) or []
-            return ClipMeta(
-                title=data.get("title", source.title or name),
-                caption=data["caption"],
-                hashtags=[t if t.startswith("#") else f"#{t}" for t in tags],
-            )
+
+def _generate_openai(prompt: str) -> dict:
+    from openai import OpenAI  # lazy
+
+    client = OpenAI(api_key=openai_api_key())
+    resp = client.chat.completions.create(
+        model=openai_model(),
+        max_tokens=600,
+        response_format={"type": "json_object"},
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return _parse_json(resp.choices[0].message.content or "")
+
+
+def _generate_anthropic(prompt: str) -> dict:
+    import anthropic  # lazy
+
+    client = anthropic.Anthropic(api_key=anthropic_api_key())
+    resp = client.messages.create(
+        model=anthropic_model(),
+        max_tokens=600,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    text = "".join(getattr(b, "text", "") for b in resp.content)
+    return _parse_json(text)
+
+
+def generate(creator_style: dict, name: str, source: SourceItem, transcript: Optional[str] = None) -> ClipMeta:
+    provider = active_llm_provider()
+    if not provider:
+        return _fallback(creator_style, name, source)
+    prompt = _build_prompt(creator_style, name, source, transcript)
+    try:
+        data = _generate_openai(prompt) if provider == "openai" else _generate_anthropic(prompt)
+        meta = _meta_from_data(data, name, source)
+        if meta:
+            return meta
     except Exception:
         pass
     return _fallback(creator_style, name, source)

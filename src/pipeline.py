@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import List, Optional
 
 from . import db
@@ -40,7 +41,11 @@ def _rfc3339_days_ago(days: int) -> str:
 
 
 def gather_sources(
-    creator: Creator, include_vods: bool, include_youtube: bool, limit: int
+    creator: Creator,
+    include_vods: bool,
+    include_youtube: bool,
+    limit: int,
+    include_clips: bool = True,
 ) -> List[SourceItem]:
     sources: List[SourceItem] = []
     tw = creator.twitch
@@ -48,7 +53,7 @@ def gather_sources(
         cid, csec = twitch_credentials()
         try:
             client = TwitchClient(cid or "", csec or "")
-            if tw.get("pull_existing_clips", True):
+            if include_clips and tw.get("pull_existing_clips", True):
                 sources += client.get_clips(
                     tw["login"], started_at=_rfc3339_days_ago(7), limit=limit
                 )
@@ -74,7 +79,19 @@ def process_source(
     ensure_dirs()
     created: List[Clip] = []
 
-    local = download(source.url, DOWNLOAD_DIR, _safe(source.key))
+    name = _safe(source.key)
+    win = float(creator.clip.get("vod_window_sec", 720))
+    win_start = float(creator.clip.get("vod_window_start_sec", 1800))
+    window_threshold = float(creator.clip.get("window_if_longer_than_sec", 2700))
+    # Sehr lange Quellen (z. B. mehrstündige Twitch-VODs) nur als Fenster laden,
+    # statt mehrerer GB. Kürzere (YouTube-Uploads) komplett -> bessere Auswahl.
+    needs_window = (not source.is_pre_clipped) and source.duration_sec > window_threshold
+    if needs_window:
+        start = min(win_start, max(0.0, source.duration_sec - win))
+        _log(f"Langes Video: lade {win/60:.0f}-min-Fenster ab {start/60:.0f} min …")
+        local = download(source.url, DOWNLOAD_DIR, name, start_sec=start, dur_sec=win)
+    else:
+        local = download(source.url, DOWNLOAD_DIR, name)
     if not local:
         _log(f"Download fehlgeschlagen: {source.url}")
         db.mark_processed(conn, source.key, creator.id)
@@ -102,6 +119,11 @@ def process_source(
             clip.status = quality_gate.decide_status(creator.clip)
             db.save_clip(conn, clip)
             created.append(clip)
+            # Fürs manuelle Posten: Caption + Hashtags als .txt neben den Clip legen.
+            try:
+                Path(final).with_suffix(".txt").write_text(meta.tiktok_caption(), encoding="utf-8")
+            except Exception:
+                pass
             _log(f"Clip erstellt #{clip.id} [{clip.status}]: {final}")
 
             token = creator.tiktok_access_token()
@@ -133,6 +155,7 @@ def run(
     include_vods: bool = False,
     include_youtube: bool = False,
     auto_upload: bool = False,
+    include_clips: bool = True,
     config: Optional[Config] = None,
 ) -> List[Clip]:
     cfg = config or load_config()
@@ -149,7 +172,7 @@ def run(
             _log(f"Übersprungen (keine Einwilligung): {creator.id}")
             continue
         _log(f"=== {creator.name} ({creator.id}) ===")
-        sources = gather_sources(creator, include_vods, include_youtube, limit)
+        sources = gather_sources(creator, include_vods, include_youtube, limit, include_clips)
         _log(f"{len(sources)} Quelle(n) gefunden.")
 
         if dry_run:

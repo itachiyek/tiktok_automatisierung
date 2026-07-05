@@ -12,6 +12,8 @@ RENDER_DIR = DATA_DIR / "renders"
 DB_PATH = DATA_DIR / "clips.db"
 
 DEFAULT_ANTHROPIC_MODEL = "claude-opus-4-8"
+DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
+DEFAULT_LLM_PROVIDER = "auto"  # auto | openai | anthropic
 
 
 def load_env() -> None:
@@ -96,12 +98,75 @@ def youtube_api_key() -> Optional[str]:
     return os.environ.get("YOUTUBE_API_KEY")
 
 
+def ytdlp_cookie_opts() -> dict:
+    """yt-dlp-Optionen (Python-API) für Cookies aus Browser/Datei.
+
+    YouTube verlangt für Downloads inzwischen Login-Cookies ("Sign in to
+    confirm you're not a bot"). Steuerung via .env:
+      YTDLP_COOKIES_BROWSER=chrome|edge|firefox|brave  (optional :profil)
+      YTDLP_COOKIES_FILE=C:\\pfad\\cookies.txt
+    Leeres Dict = keine Cookies (dann nur Auflisten möglich, kein Download).
+    """
+    file = os.environ.get("YTDLP_COOKIES_FILE", "").strip()
+    if file:
+        return {"cookiefile": file}
+    browser = os.environ.get("YTDLP_COOKIES_BROWSER", "").strip()
+    if browser:
+        name, _, profile = browser.partition(":")
+        spec = (name.lower(), profile or None, None, None)
+        return {"cookiesfrombrowser": spec}
+    return {}
+
+
+def ytdlp_cookie_cli() -> list[str]:
+    """Wie ytdlp_cookie_opts(), aber als CLI-Argumente für den yt-dlp-Aufruf."""
+    file = os.environ.get("YTDLP_COOKIES_FILE", "").strip()
+    if file:
+        return ["--cookies", file]
+    browser = os.environ.get("YTDLP_COOKIES_BROWSER", "").strip()
+    if browser:
+        return ["--cookies-from-browser", browser.lower()]
+    return []
+
+
 def anthropic_api_key() -> Optional[str]:
     return os.environ.get("ANTHROPIC_API_KEY")
 
 
 def anthropic_model() -> str:
     return os.environ.get("ANTHROPIC_MODEL", DEFAULT_ANTHROPIC_MODEL)
+
+
+def openai_api_key() -> Optional[str]:
+    return os.environ.get("OPENAI_API_KEY")
+
+
+def openai_model() -> str:
+    return os.environ.get("OPENAI_MODEL", DEFAULT_OPENAI_MODEL)
+
+
+def llm_provider() -> str:
+    """Welcher LLM-Anbieter erzeugt Captions/Hashtags?
+
+    'auto' (Default): OpenAI bevorzugt, wenn OPENAI_API_KEY gesetzt ist,
+    sonst Anthropic. Mit LLM_PROVIDER=openai|anthropic explizit erzwingbar.
+    """
+    return os.environ.get("LLM_PROVIDER", DEFAULT_LLM_PROVIDER).strip().lower()
+
+
+def active_llm_provider() -> Optional[str]:
+    """Tatsächlich nutzbarer Anbieter (berücksichtigt vorhandene Keys). None = kein Key."""
+    pref = llm_provider()
+    if pref == "openai":
+        return "openai" if openai_api_key() else None
+    if pref == "anthropic":
+        return "anthropic" if anthropic_api_key() else None
+    # auto
+    if openai_api_key():
+        return "openai"
+    if anthropic_api_key():
+        return "anthropic"
+    return None
 
 
 def tiktok_credentials() -> tuple[Optional[str], Optional[str]]:

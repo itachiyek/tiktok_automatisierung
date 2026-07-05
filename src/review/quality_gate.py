@@ -16,10 +16,11 @@ def check(conn, clip: Clip, clip_cfg: dict) -> Tuple[bool, str]:
         return False, "Datei zu klein / Render fehlgeschlagen"
 
     dur = clip.segment.duration
-    min_d = float(clip_cfg.get("min_duration_sec", 61)) * 0.6
+    # Harte Untergrenze: Clips müssen mindestens 60 s sein (TikTok Creator Rewards).
+    min_d = max(60.0, float(clip_cfg.get("min_duration_sec", 61)))
     max_d = float(clip_cfg.get("max_duration_sec", 90)) * 1.5
     if dur < min_d:
-        return False, f"zu kurz ({dur:.0f}s)"
+        return False, f"zu kurz ({dur:.0f}s, min {min_d:.0f}s)"
     if dur > max_d:
         return False, f"zu lang ({dur:.0f}s)"
 

@@ -37,6 +37,7 @@ def pick_segments(
     target_len: float = 65.0,
     max_clips: int = 3,
     min_gap_sec: float = 45.0,
+    min_len: float = 60.0,
 ) -> List[Segment]:
     """Wählt die energiereichsten, nicht-überlappenden Abschnitte.
 
@@ -60,7 +61,7 @@ def pick_segments(
         start = max(0.0, center - half)
         end = min(total, start + target_len)
         start = max(0.0, end - target_len)  # ans Ende anpassen, Länge halten
-        if end - start < min(target_len * 0.6, 30):
+        if end - start < min_len:  # keine Clips unter der harten Mindestlänge (>=60s)
             continue
         chosen_centers.append(center)
         segments.append(Segment(start=round(start, 2), end=round(end, 2), score=energies[idx]))

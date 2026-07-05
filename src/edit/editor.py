@@ -32,8 +32,8 @@ def ffprobe_duration(path: str) -> float:
         return 0.0
 
 
-def _run(cmd: list) -> None:
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+def _run(cmd: list, cwd: Optional[str] = None) -> None:
+    proc = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd)
     if proc.returncode != 0:
         raise RuntimeError(f"ffmpeg fehlgeschlagen: {proc.stderr[-800:]}")
 
@@ -56,8 +56,13 @@ def cut_and_reframe(src: str, seg: Segment, out: str, mode: str = "blur_pad") ->
 
 def burn(src: str, out: str, ass_path: Optional[str], credit: Optional[str]) -> str:
     filters = []
+    cwd = None
     if ass_path:
-        filters.append(f"ass={_escape(ass_path)}")
+        # ffmpeg im Ordner der .ass ausführen und nur den Dateinamen referenzieren.
+        # So entfällt das Windows-Pfad-Problem (Laufwerk-':' bricht den Filtergraph).
+        ass_p = Path(ass_path)
+        cwd = str(ass_p.parent)
+        filters.append(f"ass={_escape(ass_p.name)}")
     if credit:
         txt = credit.replace(":", r"\:").replace("'", "")
         filters.append(
@@ -73,13 +78,13 @@ def burn(src: str, out: str, ass_path: Optional[str], credit: Optional[str]) -> 
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
         "-c:a", "copy", "-movflags", "+faststart", "-loglevel", "error", out,
     ]
-    _run(cmd)
+    _run(cmd, cwd=cwd)
     return out
 
 
-def _escape(path: str) -> str:
-    # ffmpeg-Filterpfad: ':' und '\' maskieren
-    return path.replace("\\", "/").replace(":", r"\:")
+def _escape(name: str) -> str:
+    # Filtergraph-Sonderzeichen im (reinen) Dateinamen maskieren.
+    return name.replace("\\", "/").replace(":", r"\:").replace("'", r"\'")
 
 
 def make_clip(
@@ -108,7 +113,7 @@ def make_clip(
         except Exception:
             ass_path = None  # Untertitel optional – Clip trotzdem erzeugen
 
-    credit = credit_text if clip_cfg.get("show_creator_credit", True) else None
+    credit = credit_text if clip_cfg.get("show_creator_credit", False) else None
     final = str(work / f"{basename}.mp4")
     burn(inter, final, ass_path, credit)
     return final

@@ -25,27 +25,62 @@ def _ass_time(t: float) -> str:
     return f"{h:d}:{m:02d}:{s:02d}.{cs:02d}"
 
 
+# WrapStyle 0 = automatischer, ausgewogener Zeilenumbruch (kein Überlaufen).
+# Große, aber nicht zu breite Schrift; große Seitenränder halten Text sicher im 1080px-Bild.
 ASS_HEADER = """[Script Info]
 ScriptType: v4.00+
 PlayResX: 1080
 PlayResY: 1920
-WrapStyle: 2
+WrapStyle: 0
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, BackColour, Bold, Italic, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Pop,Arial,72,&H00FFFFFF,&H00000000,&H00000000,-1,0,1,6,2,2,60,60,300,1
+Style: Pop,Arial,60,&H00FFFFFF,&H00000000,&H64000000,-1,0,1,5,2,2,90,90,260,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
 
+# Max. Zeichen pro Untertitel-Event -> passt in <=2 Zeilen bei dieser Schrift/Breite.
+MAX_SUB_CHARS = 42
+
+
+def _chunk(start: float, end: float, text: str, max_chars: int = MAX_SUB_CHARS) -> List[TranscriptSegment]:
+    """Zerlegt ein (evtl. langes) Segment in kurze Häppchen mit anteiliger Zeit."""
+    words = text.split()
+    if not words:
+        return []
+    groups: list[str] = []
+    cur = ""
+    for w in words:
+        if cur and len(cur) + 1 + len(w) > max_chars:
+            groups.append(cur)
+            cur = w
+        else:
+            cur = f"{cur} {w}".strip()
+    if cur:
+        groups.append(cur)
+
+    total = sum(len(g) for g in groups) or 1
+    span = max(0.0, end - start)
+    out: List[TranscriptSegment] = []
+    t = start
+    for g in groups:
+        seg_end = min(end, t + span * (len(g) / total))
+        if seg_end <= t:  # Mini-Sicherung gegen Null-Längen
+            seg_end = min(end, t + 0.4)
+        out.append((t, seg_end, g))
+        t = seg_end
+    return out
+
 
 def write_ass(segments: List[TranscriptSegment], out_path: str) -> str:
     lines = [ASS_HEADER]
     for start, end, text in segments:
-        safe = text.replace("\n", " ").replace("{", "(").replace("}", ")")
-        lines.append(
-            f"Dialogue: 0,{_ass_time(start)},{_ass_time(end)},Pop,,0,0,0,,{safe}"
-        )
+        for c_start, c_end, c_text in _chunk(start, end, text):
+            safe = c_text.replace("\n", " ").replace("{", "(").replace("}", ")")
+            lines.append(
+                f"Dialogue: 0,{_ass_time(c_start)},{_ass_time(c_end)},Pop,,0,0,0,,{safe}"
+            )
     Path(out_path).write_text("\n".join(lines), encoding="utf-8")
     return out_path
