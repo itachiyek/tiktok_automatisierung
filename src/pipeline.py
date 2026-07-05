@@ -36,12 +36,37 @@ def _safe(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]", "_", name)
 
 
+# Füllwörter, auf denen ein Kurztitel nicht enden darf (sonst "…UND").
+_STOP = {
+    "und", "oder", "aber", "mit", "bei", "der", "die", "das", "den", "dem", "des",
+    "ein", "eine", "einen", "einem", "einer", "im", "in", "am", "an", "auf", "aus",
+    "für", "zu", "zum", "zur", "von", "vom", "&", "the", "a", "and", "with", "of",
+    "to", "my", "is", "vs", "x",
+}
+
+
 def _short_hook(title: str, max_words: int = 5, max_chars: int = 34) -> str:
-    """3–5-Wort-Kurzbeschreibung für oben im Clip (Twitch-Chat-Befehle !x/#x/@x raus)."""
-    words = [w for w in re.split(r"\s+", title or "") if w and not w.startswith(("!", "#", "@"))]
-    hook = " ".join(words[:max_words]).strip(" -–—|:.,")
+    """Sinnvolle 3–5-Wort-Kurzbeschreibung für oben im Clip.
+
+    - alles nach dem ersten '|' abschneiden (dort steht oft Twitch-Command-Spam)
+    - Chat-Befehle (!x/#x/@x) raus
+    - nie auf einem Füllwort enden ("…UND")
+    """
+    head = (title or "").split("|")[0]
+    # Am ersten Satzende-Zeichen abschneiden, wenn dort schon ein sinnvoller
+    # Teil steht (z. B. "Die beste Crew der Welt! SAND …" -> "Die beste Crew der Welt").
+    first = re.split(r"[!?.:]", head)[0].strip()
+    if len(first.split()) >= 3:
+        head = first
+    words = [w for w in re.split(r"\s+", head) if w and not w.startswith(("!", "#", "@"))]
+    words = words[:max_words]
+    while words and words[-1].lower().strip(".,!?:;-") in _STOP:
+        words.pop()
+    hook = " ".join(words).strip(" -–—|:.,")
     if len(hook) > max_chars:
         hook = hook[:max_chars].rsplit(" ", 1)[0]
+        while hook and hook.rsplit(" ", 1)[-1].lower() in _STOP:
+            hook = hook.rsplit(" ", 1)[0] if " " in hook else ""
     return hook
 
 
