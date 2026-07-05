@@ -1,0 +1,32 @@
+name: test-twitch
+
+# Reiner Machbarkeits-Test: Kann GitHub Actions (Azure-IP) Twitch laden?
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+          python -m pip install -U yt-dlp
+          python -m yt_dlp --version
+
+      - name: Twitch VOD listing + Formate
+        run: |
+          echo "== VOD-Liste (Trymacs) =="
+          python -m yt_dlp --flat-playlist --playlist-end 2 \
+            --print "%(id)s dur=%(duration)s views=%(view_count)s %(title).40s" \
+            "https://www.twitch.tv/trymacs/videos"
+          VOD=$(python -m yt_dlp --flat-playlist --playlist-end 1 --print url "https://www.twitch.tv/trymacs/videos")
+          echo "== Formate fuer $VOD =="
+          python -m yt_dlp --no-warnings -F "$VOD" | tail -12
+
+      - name: Echter Clip-Download (Beweis)
+        run: |
+          CLIP=$(python -m yt_dlp --flat-playlist --playlist-end 1 --print url "https://www.twitch.tv/trymacs/clips")
+          echo "Clip: $CLIP"
+          python -m yt_dlp --no-warnings -o clip.mp4 "$CLIP"
+          if [ -f clip.mp4 ]; then echo "RESULT=TWITCH_DOWNLOAD_OK size=$(stat -c%s clip.mp4)"; else echo "RESULT=FAIL"; exit 1; fi
