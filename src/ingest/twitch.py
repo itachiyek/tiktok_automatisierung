@@ -24,15 +24,18 @@ def _entries(url: str, limit: int) -> list[dict]:
     ]
     try:
         proc = subprocess.run(
-            cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=90
+            cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120
         )
-    except Exception:
+    except Exception as exc:  # noqa
+        print(f"[twitch] yt-dlp Aufruf fehlgeschlagen ({url}): {exc}", flush=True)
         return []
     if proc.returncode != 0 or not (proc.stdout or "").strip():
+        print(f"[twitch] yt-dlp rc={proc.returncode} ({url}): {(proc.stderr or '')[:200]}", flush=True)
         return []
     try:
         return json.loads(proc.stdout).get("entries") or []
-    except Exception:
+    except Exception as exc:  # noqa
+        print(f"[twitch] JSON-Parse-Fehler ({url}): {exc}", flush=True)
         return []
 
 

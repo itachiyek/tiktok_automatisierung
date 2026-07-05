@@ -1,0 +1,142 @@
+# Creator-Profile für die Clip-Pipeline.
+# Kopieren nach config/creators.yaml und mit echten Werten/IDs füllen.
+# Hinweis: KEINE API-Keys/Tokens hier ablegen — die kommen aus Env-Variablen/Secret-Store.
+
+creators:
+  - id: trymacs
+    name: Trymacs
+    consent: true              # schriftliche Einwilligung liegt vor (Datum/Doku referenzieren)
+    revenue_share: 0.30        # Anteil an den Creator (Beispielwert, noch festlegen)
+    sources:
+      twitch:
+        login: trymacs
+        pull_existing_clips: true   # Community-Clips = vorkuratierte Highlights (Top-Quelle)
+        pull_vods: true
+      youtube:
+        channel_id: "UC6Gc4KQ1ueDnh8x7plaAD3w"   # Trymacs Hauptkanal
+        monitor_uploads: true
+    tiktok_account: "@trymacs.clips"
+    style:
+      language: de
+      niche: [gaming, eafc, reaction, entertainment]
+      tone: "hyped, jugendlich, viel Energie"
+
+  - id: secondtry
+    name: SecondTry
+    consent: true
+    revenue_share: 0.30
+    sources:
+      twitch:
+        login: secondtry
+        pull_existing_clips: true
+        pull_vods: true
+      youtube:
+        channel_id: "UCkeWXiGjQPK972Bx_t9e5Ug"   # SecondTry
+        monitor_uploads: true
+    tiktok_account: "@secondtry.clips"
+    style:
+      language: de
+      niche: [gaming, lets_play, entertainment]
+      tone: "locker, witzig, nahbar"
+
+  - id: eliasn97
+    name: EliasN97
+    consent: true
+    revenue_share: 0.30
+    sources:
+      twitch:
+        login: eliasn97
+        pull_existing_clips: true
+        pull_vods: true
+      youtube:
+        channel_id: "UCW6SLCuRXuUFWbQH563D0Hw"   # EliasN97 (Elias Nerlich)
+        monitor_uploads: true
+    tiktok_account: "@eliasn97.clips"
+    style:
+      language: de
+      niche: [fussball, vlog, entertainment, food]
+      tone: "energetisch, direkt, hyped"
+
+  - id: rohaze
+    name: Rohaze
+    consent: true
+    revenue_share: 0.30
+    sources:
+      twitch:
+        login: xrohat            # https://www.twitch.tv/xrohat
+        pull_existing_clips: true
+        pull_vods: true
+      youtube:
+        channel_id: "UC-0VS3EMstuxc6q54jsAhNw"   # https://www.youtube.com/@Rohaze
+        monitor_uploads: true
+    tiktok_account: "@streamerclips1337"
+    style:
+      language: de
+      niche: [gaming, variety, entertainment]
+      tone: "locker, unterhaltsam"
+
+  - id: knossi
+    name: Knossi
+    consent: true
+    revenue_share: 0.30
+    sources:
+      youtube:
+        channel_id: "UCtckLvYloMnsey8E5qTwWwA"   # https://www.youtube.com/@Knossi
+        monitor_uploads: true
+    tiktok_account: "@streamerclips1337"
+    style:
+      language: de
+      niche: [variety, just_chatting, entertainment]
+      tone: "laut, comedy, entertainer"
+
+  - id: mertabireacts
+    name: MertAbiReacts
+    consent: true
+    revenue_share: 0.30
+    sources:
+      twitch:
+        login: mertabimula       # https://www.twitch.tv/mertabimula
+        pull_existing_clips: true
+        pull_vods: true
+      youtube:
+        channel_id: "UChFN8_C7yDdmUHJZVRQRAGQ"   # https://www.youtube.com/@MertAbiReacts
+        monitor_uploads: true
+    tiktok_account: "@streamerclips1337"
+    style:
+      language: de
+      niche: [reaction, just_chatting, entertainment]
+      tone: "energetisch, Reaktionen"
+
+  - id: elquaria
+    name: Elquaria
+    consent: true
+    revenue_share: 0.30
+    sources:
+      twitch:
+        login: elquaria          # https://www.twitch.tv/elquaria
+        pull_existing_clips: true
+        pull_vods: true
+      youtube:
+        channel_id: "UCUJRKQJhZyhi-P5PETEBe_Q"   # https://www.youtube.com/@Elquaria
+        monitor_uploads: true
+    tiktok_account: "@streamerclips1337"
+    style:
+      language: de
+      niche: [gaming, entertainment]
+      tone: "chillig, gaming"
+
+# Globale Defaults für alle Creator (überschreibbar pro Creator)
+defaults:
+  clip:
+    min_duration_sec: 61       # > 60 Sek. wegen TikTok Creator Rewards (hart erzwungen)
+    max_duration_sec: 90
+    aspect_ratio: "9:16"
+    burn_subtitles: true
+    show_creator_credit: false # kein eingebrannter Credit-Text im Video
+    max_clips_per_source: 2    # wie viele Clips je Video (kleiner = mehr Vielfalt)
+    window_if_longer_than_sec: 14400 # nur >4h (Twitch-VODs) fenstern; YouTube voll laden (zuverlässiger)
+    vod_window_sec: 720        # Länge des Scan-Fensters (12 min)
+    vod_window_start_sec: 1800 # Start des Scan-Fensters (30 min, Intro überspringen)
+  posting:
+    per_account_per_day: 2
+    require_human_review: true # zu Beginn manuelle Freigabe (später lockern)
