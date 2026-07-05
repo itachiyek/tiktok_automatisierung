@@ -33,7 +33,11 @@ höchstens 1 Emoji, oft auch gar keins. Beispiele: "Trymacs bei Deutschland gege
 "EliasN97 holt seinen neuen Lambo ab".
 
 Antworte AUSSCHLIESSLICH als JSON:
-{{"title": "...", "caption": "...", "hashtags": ["#...", "#..."]}}
+{{"title": "...", "hook": "...", "caption": "...", "hashtags": ["#...", "#..."]}}
+- hook: SEHR kurzer, VOLLSTÄNDIGER Titel für oben im Video – 3 bis 5 Wörter, worum es im
+  Clip geht. MUSS ein sinnvoller, abgeschlossener Ausdruck sein (NIEMALS mitten im Satz
+  abbrechen, nicht auf "und/mit/bei/der" enden). Ohne Hashtags/Emojis. Beispiele:
+  "Elquaria bei Red Bull Gamerations" / "Trymacs' bester Round" / "EliasN97 holt den Lambo".
 - caption: kurz, 1 Satz, dritte Person über {name}, max. 1 Emoji.
 - hashtags: 5-8 Stück, gemischt aus Creator-/Nischen-/Trend-Tags, inkl. #fyp.
 """
@@ -91,6 +95,7 @@ def _meta_from_data(data: dict, name: str, source: SourceItem) -> Optional[ClipM
         title=data.get("title", source.title or name),
         caption=data["caption"],
         hashtags=[t if t.startswith("#") else f"#{t}" for t in tags],
+        hook=(data.get("hook") or "").strip(),
     )
 
 

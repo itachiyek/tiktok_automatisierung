@@ -137,12 +137,14 @@ def process_source(
     for i, seg in enumerate(segments):
         try:
             basename = _safe(f"{source.key}_{i}")
+            meta = generator.generate(creator.style, creator.name, source)
+            # LLM-Hook bevorzugen (vollständiger Satz); sonst Kurz-Hook aus dem Titel.
+            top_title = meta.hook or _short_hook(source.title)
             final = editor.make_clip(
                 local, seg, creator.clip, credit, str(RENDER_DIR),
                 basename, language=creator.style.get("language", "de"),
-                top_title=_short_hook(source.title),
+                top_title=top_title,
             )
-            meta = generator.generate(creator.style, creator.name, source)
             clip = Clip(
                 creator_id=creator.id, source_key=source.key, segment=seg,
                 path=final, meta=meta,

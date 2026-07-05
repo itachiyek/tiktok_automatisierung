@@ -51,6 +51,7 @@ class ClipMeta:
     title: str
     caption: str
     hashtags: list[str] = field(default_factory=list)
+    hook: str = ""  # kurzer, vollständiger 3–5-Wort-Titel für oben im Clip (vom LLM)
 
     def tiktok_caption(self, max_len: int = 2200) -> str:
         """Caption + Hashtags als ein TikTok-Text."""
