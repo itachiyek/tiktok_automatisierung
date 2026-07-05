@@ -95,8 +95,12 @@ def make_clip(
     work_dir: str,
     basename: str,
     language: str = "de",
+    top_title: str = "",
 ) -> str:
-    """Voller Edit-Pfad: Rückgabe = Pfad zur fertigen 9:16-MP4."""
+    """Voller Edit-Pfad: Rückgabe = Pfad zur fertigen 9:16-MP4.
+
+    Keine gesprochenen Untertitel mehr – nur ein kurzer Titel (3–5 Wörter) oben.
+    """
     work = Path(work_dir)
     work.mkdir(parents=True, exist_ok=True)
     mode = clip_cfg.get("reframe_mode", "blur_pad")
@@ -105,13 +109,12 @@ def make_clip(
     cut_and_reframe(source_path, seg, inter, mode=mode)
 
     ass_path = None
-    if clip_cfg.get("burn_subtitles", True):
+    if top_title:
         try:
-            tr = subtitles.transcribe(inter, language=language)
-            if tr:
-                ass_path = subtitles.write_ass(tr, str(work / f"{basename}.ass"))
+            dur = ffprobe_duration(inter) or (seg.end - seg.start)
+            ass_path = subtitles.write_title_ass(top_title, str(work / f"{basename}.ass"), dur)
         except Exception:
-            ass_path = None  # Untertitel optional – Clip trotzdem erzeugen
+            ass_path = None  # Titel optional – Clip trotzdem erzeugen
 
     credit = credit_text if clip_cfg.get("show_creator_credit", False) else None
     final = str(work / f"{basename}.mp4")

@@ -78,6 +78,33 @@ def _chunk(start: float, end: float, text: str, max_chars: int = MAX_SUB_CHARS) 
     return out
 
 
+# Kurzer Titel OBEN im Clip (Alignment 8 = oben-mittig), dezenter halbtransparenter
+# Kasten. BorderStyle 3 = Kasten (BackColour), MarginV = Abstand von oben.
+TITLE_HEADER = """[Script Info]
+ScriptType: v4.00+
+PlayResX: 1080
+PlayResY: 1920
+WrapStyle: 0
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, BackColour, Bold, Italic, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Top,Arial,62,&H00FFFFFF,&H00000000,&HA0000000,-1,0,3,6,0,8,70,70,140,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+
+
+def write_title_ass(text: str, out_path: str, duration: float = 60.0) -> str:
+    """Ein kurzer Titel, der die ganze Clip-Dauer oben eingeblendet ist."""
+    safe = " ".join((text or "").split()).replace("{", "(").replace("}", ")").replace("\\", "/")
+    body = TITLE_HEADER + (
+        f"Dialogue: 0,{_ass_time(0)},{_ass_time(max(1.0, duration))},Top,,0,0,0,,{safe}\n"
+    )
+    Path(out_path).write_text(body, encoding="utf-8")
+    return out_path
+
+
 def write_ass(segments: List[TranscriptSegment], out_path: str) -> str:
     lines = [ASS_HEADER]
     for start, end, text in segments:

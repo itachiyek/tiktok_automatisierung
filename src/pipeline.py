@@ -36,6 +36,15 @@ def _safe(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]", "_", name)
 
 
+def _short_hook(title: str, max_words: int = 5, max_chars: int = 34) -> str:
+    """3–5-Wort-Kurzbeschreibung für oben im Clip (Twitch-Chat-Befehle !x/#x/@x raus)."""
+    words = [w for w in re.split(r"\s+", title or "") if w and not w.startswith(("!", "#", "@"))]
+    hook = " ".join(words[:max_words]).strip(" -–—|:.,")
+    if len(hook) > max_chars:
+        hook = hook[:max_chars].rsplit(" ", 1)[0]
+    return hook
+
+
 def _rfc3339_days_ago(days: int) -> str:
     return (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -106,6 +115,7 @@ def process_source(
             final = editor.make_clip(
                 local, seg, creator.clip, credit, str(RENDER_DIR),
                 basename, language=creator.style.get("language", "de"),
+                top_title=_short_hook(source.title),
             )
             meta = generator.generate(creator.style, creator.name, source)
             clip = Clip(

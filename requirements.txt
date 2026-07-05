@@ -5,8 +5,8 @@ python-dotenv>=1.0      # .env laden
 openai>=1.40            # OpenAI API (Texte/Hashtags, Standard-Provider)
 anthropic>=0.40         # Claude API (Texte/Hashtags, optional/umschaltbar)
 yt-dlp>=2024.1          # Download von Twitch/YouTube
-faster-whisper>=1.0     # Untertitel-Transkription
 numpy>=1.24             # Audio-Energie-Analyse
+# (faster-whisper entfernt – keine gesprochenen Untertitel mehr, nur kurzer Titel oben)
 
 # Systemvoraussetzung (NICHT pip): ffmpeg + ffprobe im PATH
 #   Debian/Ubuntu:  sudo apt-get install ffmpeg
