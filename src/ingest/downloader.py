@@ -35,6 +35,8 @@ def download(
         "retries": 3,
         "socket_timeout": 30,        # hängende Verbindungen nach 30s abbrechen
         "fragment_retries": 3,
+        # HLS-Segmente (Twitch-VOD) parallel laden -> in der Cloud drastisch schneller.
+        "concurrent_fragment_downloads": 8,
         # Cookies (falls in .env konfiguriert) – YouTube blockt Downloads sonst
         # mit "Sign in to confirm you're not a bot".
         **ytdlp_cookie_opts(),
