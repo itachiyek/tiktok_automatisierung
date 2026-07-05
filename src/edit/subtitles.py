@@ -8,9 +8,13 @@ from typing import List, Tuple
 TranscriptSegment = Tuple[float, float, str]
 
 
-def transcribe(path: str, language: str = "de", model_size: str = "small") -> List[TranscriptSegment]:
+def transcribe(path: str, language: str = "de", model_size: str = "") -> List[TranscriptSegment]:
+    import os
+
     from faster_whisper import WhisperModel  # lazy
 
+    # Modellgröße via ENV steuerbar (CI nutzt "base" = kleiner/schneller als "small").
+    model_size = model_size or os.environ.get("WHISPER_MODEL_SIZE", "small")
     model = WhisperModel(model_size, device="cpu", compute_type="int8")
     segments, _ = model.transcribe(path, language=language, vad_filter=True)
     return [(float(s.start), float(s.end), s.text.strip()) for s in segments if s.text.strip()]
