@@ -6,6 +6,7 @@ nutzbaren API-Key wird ein Template-Fallback verwendet.
 from __future__ import annotations
 
 import json
+import re
 from typing import Optional
 
 from ..config import (
@@ -38,13 +39,21 @@ Antworte AUSSCHLIESSLICH als JSON:
 """
 
 
+def _clean_source_title(title: str) -> str:
+    """Twitch-Titel entrümpeln: alles nach dem ersten '|' weg (Command-Spam),
+    Chat-Befehle (!x/#x/@x) raus, Ränder trimmen."""
+    head = (title or "").split("|")[0]
+    words = [w for w in re.split(r"\s+", head) if w and not w.startswith(("!", "#", "@"))]
+    return " ".join(words).strip(" -–—|:;,.")
+
+
 def _build_prompt(creator_style: dict, name: str, source: SourceItem, transcript: Optional[str]) -> str:
     tb = f"Transkript-Auszug: {transcript[:800]}" if transcript else ""
     return PROMPT.format(
         name=name,
         niche=", ".join(creator_style.get("niche", []) or ["entertainment"]),
         tone=creator_style.get("tone", "energiegeladen"),
-        title=source.title or "(kein Titel)",
+        title=_clean_source_title(source.title) or "(kein Titel)",
         transcript_block=tb,
     )
 
@@ -64,13 +73,14 @@ def _fallback(creator_style: dict, name: str, source: SourceItem) -> ClipMeta:
     niche = creator_style.get("niche", []) or ["clips"]
     base = [f"#{name.lower().replace(' ', '')}", "#fyp", "#viral", "#deutschland"]
     base += [f"#{n}" for n in niche]
-    caption = f"{name} – das musst du sehen! 😮 {source.title}".strip()
+    clean = _clean_source_title(source.title)
+    caption = f"{name} – das musst du sehen! 😮 {clean}".strip()
     seen, tags = set(), []
     for t in base:
         if t not in seen:
             seen.add(t)
             tags.append(t)
-    return ClipMeta(title=source.title or f"{name} Highlight", caption=caption, hashtags=tags[:8])
+    return ClipMeta(title=clean or f"{name} Highlight", caption=caption, hashtags=tags[:8])
 
 
 def _meta_from_data(data: dict, name: str, source: SourceItem) -> Optional[ClipMeta]:
