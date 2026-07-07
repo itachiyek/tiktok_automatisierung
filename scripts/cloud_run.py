@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -53,15 +54,22 @@ def _rotate_creator(ids: list[str]) -> str:
     return ids[idx]
 
 
-def _produce(ids: list[str], ledger: dict, want: int, per_source: int) -> None:
-    """Produziert Clips, bis `want` ungeplante bereitliegen.
+def _produce(ids: list[str], ledger: dict, remaining, per_source: int,
+             deadline: float | None = None, after_each=None) -> None:
+    """Produziert Clips, bis `remaining()` 0 meldet, das Zeitbudget erschöpft ist
+    oder die Rotation nichts mehr hergibt.
 
     Pass 1: neue Quellen (frische VODs). Pass 2 (Fallback, wenn nichts Neues da):
     bereits verarbeitete VODs an noch nicht genutzten Fenstern wiederverwenden.
+    `after_each` läuft nach jedem Versuch (z. B. sofort einplanen) – so geht bei
+    einem CI-Timeout kein fertiger Clip mehr verloren.
     """
     for reuse in (False, True):
         attempts = 0
-        while len(unscheduled_clips(ledger)) < want and attempts < len(ids) * 2:
+        while remaining() > 0 and attempts < len(ids) * 2:
+            if deadline and time.time() >= deadline:
+                print("[cloud] Zeitbudget erschöpft – stoppe Produktion.")
+                return
             cid = _rotate_creator(ids)
             label = "Wiederverwendung" if reuse else "Produktion"
             print(f"[cloud] {label}: {cid} (Versuch {attempts + 1})")
@@ -72,7 +80,9 @@ def _produce(ids: list[str], ledger: dict, want: int, per_source: int) -> None:
             except Exception as exc:  # noqa
                 print(f"[cloud] {label} {cid} Fehler: {exc}")
             attempts += 1
-        if len(unscheduled_clips(ledger)) >= want:
+            if after_each:
+                after_each()
+        if remaining() <= 0:
             return
         if not reuse:
             print("[cloud] kein neues Material – verwende alte VODs an neuen Stellen wieder.")
@@ -148,6 +158,8 @@ def main(argv=None) -> int:
     ap.add_argument("--no-schedule", action="store_true", help="nur produzieren, nicht in Zernio einplanen (Test)")
     ap.add_argument("--now", action="store_true", help="EINEN frischen Clip erzeugen (falls Puffer leer) und SOFORT posten")
     ap.add_argument("--no-post", action="store_true", help="mit --now: nur produzieren/zeigen, nicht posten (Test)")
+    ap.add_argument("--time-budget", type=float, default=25,
+                    help="max. Produktionszeit in Minuten (unter dem CI-Timeout bleiben)")
     args = ap.parse_args(argv)
 
     load_env()
@@ -162,7 +174,8 @@ def main(argv=None) -> int:
 
     # --- STÜNDLICH: einen frischen Clip erzeugen (falls Puffer leer) und sofort posten ---
     if args.now:
-        _produce(ids, ledger, want=1, per_source=1)
+        _produce(ids, ledger, remaining=lambda: 0 if unscheduled_clips(ledger) else 1,
+                 per_source=1, deadline=time.time() + args.time_budget * 60)
 
         clips = unscheduled_clips(ledger)
         if not clips:
@@ -201,36 +214,46 @@ def main(argv=None) -> int:
         print("[cloud] Warteschlange voll – nichts zu tun.")
         return 0
 
-    # 1) Produzieren, bis genug ungeplante Clips da sind (oder Rotation erschöpft)
-    _produce(ids, ledger, want=need, per_source=args.per_source)
+    # Produzieren und SOFORT nach jedem Versuch einplanen (kein Verlust bei CI-Timeout).
+    state = {"scheduled": have, "new": 0, "last": last}
 
-    clips = unscheduled_clips(ledger)[:need]
-    print(f"[cloud] {len(clips)} neue Clip(s) bereit zum Einplanen.")
-
-    if args.no_schedule or not clips:
-        for p in clips:
-            print("   +", p.name)
-        return 0
-
-    # 2) In Zernio einplanen – stündlich hinter den spätesten bereits geplanten Slot
-    slots = next_slots(len(clips), last)
-    ok = 0
-    for mp4, slot in zip(clips, slots):
-        txt = mp4.with_suffix(".txt")
-        caption = txt.read_text(encoding="utf-8").strip() if txt.exists() else mp4.stem
-        try:
-            res = client.post_video(str(mp4), caption, aid, schedule_iso=slot, privacy=args.privacy)
-            pid = (res.get("post") or {}).get("_id") or res.get("_id") or "?"
+    def schedule_pending() -> None:
+        room = min(args.target - state["scheduled"], args.max_new - state["new"])
+        clips = unscheduled_clips(ledger)[:max(0, room)]
+        if args.no_schedule or not clips:
+            return
+        slots = next_slots(len(clips), state["last"])
+        for mp4, slot in zip(clips, slots):
+            txt = mp4.with_suffix(".txt")
+            caption = txt.read_text(encoding="utf-8").strip() if txt.exists() else mp4.stem
+            try:
+                res = client.post_video(str(mp4), caption, aid, schedule_iso=slot, privacy=args.privacy)
+                pid = (res.get("post") or {}).get("_id") or res.get("_id") or "?"
+            except Exception as exc:  # noqa
+                print(f"  ✗ {mp4.name}: {exc}")
+                continue
             ledger["posted"].append({
                 "file": mp4.name, "scheduled_utc": slot, "post_id": pid,
                 "account": acct.get("displayName"), "at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
             })
             _save(LEDGER, ledger)  # nach jedem Post speichern (robust bei Abbruch)
+            state["scheduled"] += 1
+            state["new"] += 1
+            state["last"] = datetime.strptime(slot, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
             print(f"  ✓ {mp4.name} -> geplant {slot} (post {pid})")
-            ok += 1
-        except Exception as exc:  # noqa
-            print(f"  ✗ {mp4.name}: {exc}")
-    print(f"[cloud] fertig: {ok}/{len(clips)} eingeplant. Neuer Vorrat: {future_count(ledger)}")
+
+    def remaining() -> int:
+        room = min(args.target - state["scheduled"], args.max_new - state["new"])
+        return max(0, room - len(unscheduled_clips(ledger)))
+
+    _produce(ids, ledger, remaining=remaining, per_source=args.per_source,
+             deadline=time.time() + args.time_budget * 60, after_each=schedule_pending)
+    schedule_pending()
+
+    if args.no_schedule:
+        for p in unscheduled_clips(ledger):
+            print("   +", p.name)
+    print(f"[cloud] fertig: {state['new']} neu eingeplant. Vorrat: {state['scheduled']} geplante Posts.")
     return 0
 
 

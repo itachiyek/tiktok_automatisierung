@@ -23,7 +23,7 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 55   # Produktion stoppt selbst nach --time-budget (25 min) + Puffer
     steps:
       - uses: actions/checkout@v4
 
