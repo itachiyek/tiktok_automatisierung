@@ -24,7 +24,7 @@ from .ingest.twitch import TwitchClient
 from .ingest.youtube import YouTubeClient
 from .metadata import generator
 from .models import Clip, Segment, SourceItem
-from .review import quality_gate
+from .review import quality_gate, virality
 from .upload.tiktok import upload_clip
 
 
@@ -77,6 +77,35 @@ def _rfc3339_days_ago(days: int) -> str:
     return (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _overlaps(a0: float, a1: float, b0: float, b1: float) -> bool:
+    return a0 < b1 and b0 < a1
+
+
+def _next_free_window(
+    duration: float, win: float, first_start: float,
+    used: list[tuple[float, float]], max_cands: int = 40,
+) -> Optional[float]:
+    """Nächster Fensterstart, der keine bereits genutzte Stelle überlappt.
+
+    Kandidaten: ab first_start in win-Schritten Richtung Stream-Ende, danach
+    rückwärts vor first_start (bis min. 300s, Intro überspringen). None = VOD
+    ausgeschöpft.
+    """
+    cands: list[float] = []
+    s = first_start
+    while s + win <= duration and len(cands) < max_cands:
+        cands.append(s)
+        s += win
+    s = first_start - win
+    while s >= 300 and len(cands) < max_cands:
+        cands.append(s)
+        s -= win
+    for c in cands:
+        if not any(_overlaps(c, c + win, u0, u1) for u0, u1 in used):
+            return c
+    return None
+
+
 def gather_sources(
     creator: Creator,
     include_vods: bool,
@@ -109,10 +138,14 @@ def gather_sources(
 
 
 def process_source(
-    conn, creator: Creator, source: SourceItem, auto_upload: bool
+    conn, creator: Creator, source: SourceItem, auto_upload: bool, reuse: bool = False
 ) -> List[Clip]:
-    if db.is_processed(conn, source.key):
+    """Quelle verarbeiten. reuse=True: bereits verarbeitete VODs erneut anzapfen –
+    an einem noch nicht genutzten Fenster (kein neues Material verfügbar)."""
+    if db.is_processed(conn, source.key) and not reuse:
         return []
+    if reuse and source.is_pre_clipped:
+        return []  # fertige Clips haben keine "andere Stelle"
     ensure_dirs()
     created: List[Clip] = []
 
@@ -123,24 +156,66 @@ def process_source(
     # Sehr lange Quellen (z. B. mehrstündige Twitch-VODs) nur als Fenster laden,
     # statt mehrerer GB. Kürzere (YouTube-Uploads) komplett -> bessere Auswahl.
     needs_window = (not source.is_pre_clipped) and source.duration_sec > window_threshold
+    used = db.used_ranges(conn, creator.id, source.key) if reuse else []
+
+    offset = 0.0  # Fensterstart = Offset der Segmente im Gesamt-VOD
     if needs_window:
-        start = min(win_start, max(0.0, source.duration_sec - win))
-        _log(f"Langes Video: lade {win/60:.0f}-min-Fenster ab {start/60:.0f} min …")
-        local = download(source.url, DOWNLOAD_DIR, name, start_sec=start, dur_sec=win)
+        if reuse:
+            # Das Standard-Fenster gilt immer als verbraucht (Erstverarbeitung).
+            occupied = used + [(win_start, win_start + win)]
+            nxt = _next_free_window(source.duration_sec, win, win_start, occupied)
+            if nxt is None:
+                _log(f"Wiederverwendung: keine freien Fenster mehr ({source.key}).")
+                return []
+            start = nxt
+            _log(f"Wiederverwendung: neues Fenster ab {start/60:.0f} min ({source.key}) …")
+        else:
+            start = min(win_start, max(0.0, source.duration_sec - win))
+            _log(f"Langes Video: lade {win/60:.0f}-min-Fenster ab {start/60:.0f} min …")
+        offset = start
+        local = download(source.url, DOWNLOAD_DIR, f"{name}_w{int(start)}", start_sec=start, dur_sec=win)
     else:
         local = download(source.url, DOWNLOAD_DIR, name)
     if not local:
         _log(f"Download fehlgeschlagen: {source.url}")
+        if not reuse:
+            db.mark_processed(conn, source.key, creator.id)
+        return []
+
+    # Mehr Kandidaten als benötigt einsammeln – das Viralitäts-Gate wählt die besten.
+    max_clips = int(creator.clip.get("max_clips_per_source", 3))
+    candidates = select_segments(source, local, creator.clip, max_clips=max_clips * 3)
+    if reuse and used:
+        candidates = [
+            s for s in candidates
+            if not any(_overlaps(s.start + offset, s.end + offset, u0, u1) for u0, u1 in used)
+        ]
+    if not candidates:
+        _log(f"Keine (neuen) Kandidaten-Segmente: {source.key}")
         db.mark_processed(conn, source.key, creator.id)
         return []
 
-    segments = select_segments(source, local, creator.clip)
-    credit = f"Credit: {creator.name}"
+    ranked = virality.rank(
+        local, candidates,
+        name=creator.name,
+        niche=", ".join(creator.style.get("niche", []) or ["entertainment"]),
+        language=creator.style.get("language", "de"),
+        max_keep=max_clips,
+        min_score=float(creator.clip.get("min_viral_score", 6.0)),
+    )
+    if not ranked:
+        _log(f"Viralitäts-Gate: kein Segment über der Schwelle ({source.key}).")
+        db.mark_processed(conn, source.key, creator.id)
+        return []
 
-    for i, seg in enumerate(segments):
+    credit = f"Credit: {creator.name}"
+    for seg, transcript, vscore in ranked:
         try:
-            basename = _safe(f"{source.key}_{i}")
-            meta = generator.generate(creator.style, creator.name, source)
+            # In der DB in VOD-Absolutzeit speichern (Dedup über Fenster hinweg);
+            # geschnitten wird relativ zur heruntergeladenen Fenster-Datei.
+            abs_seg = Segment(round(seg.start + offset, 2), round(seg.end + offset, 2), seg.score)
+            basename = _safe(f"{source.key}_{int(abs_seg.start)}")
+            meta = generator.generate(creator.style, creator.name, source, transcript=transcript or None)
             # LLM-Hook bevorzugen (vollständiger Satz); sonst Kurz-Hook aus dem Titel.
             top_title = meta.hook or _short_hook(source.title)
             final = editor.make_clip(
@@ -149,7 +224,7 @@ def process_source(
                 top_title=top_title,
             )
             clip = Clip(
-                creator_id=creator.id, source_key=source.key, segment=seg,
+                creator_id=creator.id, source_key=source.key, segment=abs_seg,
                 path=final, meta=meta,
             )
             ok, reason = quality_gate.check(conn, clip, creator.clip)
@@ -164,13 +239,14 @@ def process_source(
                 Path(final).with_suffix(".txt").write_text(meta.tiktok_caption(), encoding="utf-8")
             except Exception:
                 pass
-            _log(f"Clip erstellt #{clip.id} [{clip.status}]: {final}")
+            shown = f", viral {vscore:.1f}" if vscore is not None else ""
+            _log(f"Clip erstellt #{clip.id} [{clip.status}{shown}]: {final}")
 
             token = creator.tiktok_access_token()
             if auto_upload and clip.status == "approved" and token and clip.id:
                 _upload(conn, creator, clip, token)
         except Exception as exc:
-            _log(f"Edit/Meta fehlgeschlagen ({source.key} seg {i}): {exc}")
+            _log(f"Edit/Meta fehlgeschlagen ({source.key} @{seg.start:.0f}s): {exc}")
 
     db.mark_processed(conn, source.key, creator.id)
     return created
@@ -197,6 +273,7 @@ def run(
     auto_upload: bool = False,
     include_clips: bool = True,
     config: Optional[Config] = None,
+    reuse_windows: bool = False,
 ) -> List[Clip]:
     cfg = config or load_config()
     conn = db.init_db()
@@ -221,7 +298,7 @@ def run(
             continue
 
         for source in sources[:limit]:
-            all_clips += process_source(conn, creator, source, auto_upload)
+            all_clips += process_source(conn, creator, source, auto_upload, reuse=reuse_windows)
 
     _log(f"Fertig. {len(all_clips)} Clip(s) erzeugt.")
     return all_clips

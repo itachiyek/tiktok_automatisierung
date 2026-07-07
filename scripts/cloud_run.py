@@ -53,6 +53,31 @@ def _rotate_creator(ids: list[str]) -> str:
     return ids[idx]
 
 
+def _produce(ids: list[str], ledger: dict, want: int, per_source: int) -> None:
+    """Produziert Clips, bis `want` ungeplante bereitliegen.
+
+    Pass 1: neue Quellen (frische VODs). Pass 2 (Fallback, wenn nichts Neues da):
+    bereits verarbeitete VODs an noch nicht genutzten Fenstern wiederverwenden.
+    """
+    for reuse in (False, True):
+        attempts = 0
+        while len(unscheduled_clips(ledger)) < want and attempts < len(ids) * 2:
+            cid = _rotate_creator(ids)
+            label = "Wiederverwendung" if reuse else "Produktion"
+            print(f"[cloud] {label}: {cid} (Versuch {attempts + 1})")
+            try:
+                pipeline.run(creator_id=cid, include_vods=True, include_clips=False,
+                             include_youtube=False, limit=per_source, auto_upload=False,
+                             reuse_windows=reuse)
+            except Exception as exc:  # noqa
+                print(f"[cloud] {label} {cid} Fehler: {exc}")
+            attempts += 1
+        if len(unscheduled_clips(ledger)) >= want:
+            return
+        if not reuse:
+            print("[cloud] kein neues Material – verwende alte VODs an neuen Stellen wieder.")
+
+
 def unscheduled_clips(ledger: dict) -> list[Path]:
     done = {e.get("file") for e in ledger.get("posted", [])}
     out = [
@@ -137,17 +162,7 @@ def main(argv=None) -> int:
 
     # --- STÜNDLICH: einen frischen Clip erzeugen (falls Puffer leer) und sofort posten ---
     if args.now:
-        attempts = 0
-        # Produzieren, bis mind. 1 ungeposteter Clip da ist (Puffer deckt ~2 Std., spart CI-Zeit)
-        while len(unscheduled_clips(ledger)) < 1 and attempts < len(ids):
-            cid = _rotate_creator(ids)
-            print(f"[cloud] Produktion: {cid}")
-            try:
-                pipeline.run(creator_id=cid, include_vods=True, include_clips=False,
-                             include_youtube=False, limit=1, auto_upload=False)
-            except Exception as exc:  # noqa
-                print(f"[cloud] Produktion {cid} Fehler: {exc}")
-            attempts += 1
+        _produce(ids, ledger, want=1, per_source=1)
 
         clips = unscheduled_clips(ledger)
         if not clips:
@@ -187,18 +202,7 @@ def main(argv=None) -> int:
         return 0
 
     # 1) Produzieren, bis genug ungeplante Clips da sind (oder Rotation erschöpft)
-    attempts = 0
-    while len(unscheduled_clips(ledger)) < need and attempts < len(ids) * 2:
-        cid = _rotate_creator(ids)
-        print(f"[cloud] Produktion: {cid} (Versuch {attempts + 1})")
-        try:
-            pipeline.run(
-                creator_id=cid, include_vods=True, include_clips=False,
-                include_youtube=False, limit=args.per_source, auto_upload=False,
-            )
-        except Exception as exc:  # noqa
-            print(f"[cloud] Produktion {cid} Fehler: {exc}")
-        attempts += 1
+    _produce(ids, ledger, want=need, per_source=args.per_source)
 
     clips = unscheduled_clips(ledger)[:need]
     print(f"[cloud] {len(clips)} neue Clip(s) bereit zum Einplanen.")

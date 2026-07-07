@@ -66,6 +66,15 @@ def mark_processed(conn, source_key: str, creator_id: str) -> None:
 
 
 # --- clips ---------------------------------------------------------------
+def used_ranges(conn, creator_id: str, source_key: str) -> list[tuple[float, float]]:
+    """Bereits verwendete Zeitbereiche einer Quelle (für die VOD-Wiederverwendung)."""
+    rows = conn.execute(
+        "SELECT start, end FROM clips WHERE creator_id=? AND source_key=?",
+        (creator_id, source_key),
+    ).fetchall()
+    return [(float(r["start"]), float(r["end"])) for r in rows]
+
+
 def clip_exists(conn, creator_id: str, source_key: str, start: float, end: float) -> bool:
     row = conn.execute(
         "SELECT 1 FROM clips WHERE creator_id=? AND source_key=? "

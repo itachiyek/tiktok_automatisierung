@@ -134,6 +134,7 @@ defaults:
     burn_subtitles: true
     show_creator_credit: false # kein eingebrannter Credit-Text im Video
     max_clips_per_source: 2    # wie viele Clips je Video (kleiner = mehr Vielfalt)
+    min_viral_score: 6         # Viralitäts-Gate (0-10): nur Segmente ab diesem LLM-Score posten
     window_if_longer_than_sec: 14400 # nur >4h (Twitch-VODs) fenstern; YouTube voll laden (zuverlässiger)
     vod_window_sec: 360        # Länge des Scan-Fensters (6 min – schneller in der Cloud)
     vod_window_start_sec: 1800 # Start des Scan-Fensters (30 min, Intro überspringen)

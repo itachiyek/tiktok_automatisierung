@@ -65,6 +65,7 @@ defaults:
     aspect_ratio: "9:16"
     burn_subtitles: true
     show_creator_credit: true  # faire Namensnennung; kein fremdes Wasserzeichen einbrennen
+    min_viral_score: 6         # Viralitäts-Gate (0-10): nur Segmente ab diesem LLM-Score posten
   posting:
     per_account_per_day: 2
     require_human_review: true # zu Beginn manuelle Freigabe (später lockern)

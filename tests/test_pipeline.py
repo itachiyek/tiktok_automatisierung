@@ -72,6 +72,43 @@ def test_short_hook_filters_spam():
     assert _short_hook("WWWWW Deutschland gewinnt WWWWW") == "Deutschland gewinnt"
 
 
+def test_next_free_window():
+    from src.pipeline import _next_free_window
+
+    # 3h-VOD, 6-min-Fenster, Standardstart 1800: erstes Fenster besetzt -> nächstes dahinter
+    assert _next_free_window(10800, 360, 1800, [(1800, 2160)]) == 2160
+    # alles ab 1800 besetzt -> weicht nach vorne (vor das Standardfenster) aus
+    behind_full = [(s, s + 360) for s in range(1800, 10800, 360)]
+    nxt = _next_free_window(10800, 360, 1800, behind_full)
+    assert nxt is not None and nxt < 1800
+    # komplett ausgeschöpft -> None
+    all_full = behind_full + [(s, s + 360) for s in range(0, 1800, 360)]
+    assert _next_free_window(10800, 360, 1800, all_full) is None
+    # unbekannte Dauer (Sentinel 99999) terminiert dank Kandidaten-Limit
+    assert _next_free_window(99999.0, 360, 1800, [(1800, 2160)]) == 2160
+
+
+def test_virality_rank_without_key(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    from src.review import virality
+
+    segs = [Segment(0, 65, 0.2), Segment(100, 165, 0.9), Segment(200, 265, 0.5)]
+    ranked = virality.rank("x.mp4", segs, name="T", niche="gaming", language="de",
+                           max_keep=2, min_score=6.0)
+    # ohne Key: Gate inaktiv -> energiereichste zuerst, score=None, kein Transkript
+    assert [r[0].start for r in ranked] == [100, 200]
+    assert all(r[2] is None and r[1] == "" for r in ranked)
+
+
+def test_used_ranges_roundtrip():
+    conn = db.init_db(db.connect(":memory:"))
+    c = Clip("trymacs", "twitch_vod:7", Segment(1830.0, 1895.0, 0.5), path="/x.mp4",
+             meta=ClipMeta("T", "Cap", []))
+    db.save_clip(conn, c)
+    assert db.used_ranges(conn, "trymacs", "twitch_vod:7") == [(1830.0, 1895.0)]
+    assert db.used_ranges(conn, "trymacs", "twitch_vod:8") == []
+
+
 def test_clipmeta_caption_formatting():
     m = ClipMeta("t", "Hook!", ["fyp", "#gaming"])
     cap = m.tiktok_caption()
