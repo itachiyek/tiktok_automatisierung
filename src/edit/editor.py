@@ -7,7 +7,10 @@ from pathlib import Path
 from typing import Optional
 
 from ..models import Segment
-from . import subtitles
+from . import subtitles, title_card
+
+# Obertitel: Abstand der Titel-Box von der Oberkante (bei 1080x1920).
+TITLE_Y = 260
 
 # 9:16-Filter, blur_pad: Original mittig auf unscharfem, formatfüllendem Hintergrund.
 BLUR_PAD = (
@@ -54,7 +57,14 @@ def cut_and_reframe(src: str, seg: Segment, out: str, mode: str = "blur_pad") ->
     return out
 
 
-def burn(src: str, out: str, ass_path: Optional[str], credit: Optional[str]) -> str:
+def burn(
+    src: str,
+    out: str,
+    ass_path: Optional[str],
+    credit: Optional[str],
+    title_png: Optional[str] = None,
+    title_y: int = TITLE_Y,
+) -> str:
     filters = []
     cwd = None
     if ass_path:
@@ -69,15 +79,28 @@ def burn(src: str, out: str, ass_path: Optional[str], credit: Optional[str]) -> 
             "drawtext=text='" + txt + "':fontcolor=white:fontsize=40:"
             "x=(w-text_w)/2:y=h-150:box=1:boxcolor=black@0.45:boxborderw=12"
         )
-    if not filters:
+    if not filters and not title_png:
         # nichts zu brennen -> nur kopieren
         _run(["ffmpeg", "-y", "-i", src, "-c", "copy", "-loglevel", "error", out])
         return out
-    cmd = [
-        "ffmpeg", "-y", "-i", src, "-vf", ",".join(filters),
+
+    enc = [
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
         "-c:a", "copy", "-movflags", "+faststart", "-loglevel", "error", out,
     ]
+    if title_png:
+        # Titel-Karte (PNG mit runden Ecken) mittig oben auflegen. Das PNG ist ein
+        # normaler Input (kein Filtergraph-Pfad) – kein cwd-Trick nötig.
+        png_p = Path(title_png)
+        base = f"[0:v]{','.join(filters)}[base];" if filters else ""
+        label = "[base]" if filters else "[0:v]"
+        fc = f"{base}{label}[1:v]overlay=(W-w)/2:{title_y}"
+        cmd = [
+            "ffmpeg", "-y", "-i", src, "-i", str(png_p), "-filter_complex", fc,
+            "-map", "0:a?",
+        ] + enc
+    else:
+        cmd = ["ffmpeg", "-y", "-i", src, "-vf", ",".join(filters)] + enc
     _run(cmd, cwd=cwd)
     return out
 
@@ -109,14 +132,18 @@ def make_clip(
     cut_and_reframe(source_path, seg, inter, mode=mode)
 
     ass_path = None
+    title_png = None
     if top_title:
         try:
-            dur = ffprobe_duration(inter) or (seg.end - seg.start)
-            ass_path = subtitles.write_title_ass(top_title, str(work / f"{basename}.ass"), dur)
+            title_png = title_card.render_title_card(top_title, str(work / f"{basename}_title.png"))
         except Exception:
-            ass_path = None  # Titel optional – Clip trotzdem erzeugen
+            try:  # Fallback ohne Pillow: ASS-Box (eckig, sonst gleicher Look)
+                dur = ffprobe_duration(inter) or (seg.end - seg.start)
+                ass_path = subtitles.write_title_ass(top_title, str(work / f"{basename}.ass"), dur)
+            except Exception:
+                ass_path = None  # Titel optional – Clip trotzdem erzeugen
 
     credit = credit_text if clip_cfg.get("show_creator_credit", False) else None
     final = str(work / f"{basename}.mp4")
-    burn(inter, final, ass_path, credit)
+    burn(inter, final, ass_path, credit, title_png=title_png)
     return final

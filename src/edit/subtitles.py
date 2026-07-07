@@ -78,8 +78,10 @@ def _chunk(start: float, end: float, text: str, max_chars: int = MAX_SUB_CHARS) 
     return out
 
 
-# Kurzer Titel OBEN im Clip (Alignment 8 = oben-mittig), dezenter halbtransparenter
-# Kasten. BorderStyle 3 = Kasten (BackColour), MarginV = Abstand von oben.
+# Kurzer Titel OBEN im Clip (Alignment 8 = oben-mittig): weißer Kasten mit
+# schwarzem Text. Nur Fallback, wenn Pillow fehlt – der normale Weg ist die
+# PNG-Titel-Karte mit runden Ecken (edit/title_card.py).
+# BorderStyle 3 = Kasten, MarginV = Abstand von oben.
 TITLE_HEADER = """[Script Info]
 ScriptType: v4.00+
 PlayResX: 1080
@@ -88,7 +90,7 @@ WrapStyle: 0
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, BackColour, Bold, Italic, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Top,Arial,62,&H00FFFFFF,&H00000000,&HA0000000,-1,0,3,6,0,8,70,70,140,1
+Style: Top,Arial,74,&H00000000,&H00FFFFFF,&H00FFFFFF,-1,0,3,10,0,8,70,70,260,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
