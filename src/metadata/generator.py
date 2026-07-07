@@ -43,11 +43,31 @@ Antworte AUSSCHLIESSLICH als JSON:
 """
 
 
+# Runs desselben Sonderzeichens (>=2, z. B. "????????", "!!") komplett entfernen.
+_SPAM_RUN_RE = re.compile(r"([^\w\s])\1{1,}", re.UNICODE)
+
+
+def _is_spam_word(w: str) -> bool:
+    """Chat-Spam-Wörter wie "WWWWWWWW", "??????", reine Emoji-Tokens."""
+    core = re.sub(r"^\W+|\W+$", "", w, flags=re.UNICODE)
+    if not core:
+        return True
+    low = core.lower()
+    if len(low) >= 3 and len(set(low)) == 1:
+        return True
+    if len(low) >= 5 and len(set(low)) <= 2:
+        return True
+    return False
+
+
 def _clean_source_title(title: str) -> str:
     """Twitch-Titel entrümpeln: alles nach dem ersten '|' weg (Command-Spam),
-    Chat-Befehle (!x/#x/@x) raus, Ränder trimmen."""
-    head = (title or "").split("|")[0]
-    words = [w for w in re.split(r"\s+", head) if w and not w.startswith(("!", "#", "@"))]
+    Chat-Befehle (!x/#x/@x) und Spam-Wörter ("WWWWWW", "?????") raus, Ränder trimmen."""
+    head = _SPAM_RUN_RE.sub(" ", (title or "").split("|")[0])
+    words = [
+        w for w in re.split(r"\s+", head)
+        if w and not w.startswith(("!", "#", "@")) and not _is_spam_word(w)
+    ]
     return " ".join(words).strip(" -–—|:;,.")
 
 
@@ -78,7 +98,7 @@ def _fallback(creator_style: dict, name: str, source: SourceItem) -> ClipMeta:
     base = [f"#{name.lower().replace(' ', '')}", "#fyp", "#viral", "#deutschland"]
     base += [f"#{n}" for n in niche]
     clean = _clean_source_title(source.title)
-    caption = f"{name} – das musst du sehen! 😮 {clean}".strip()
+    caption = f"{name} – {clean}" if clean else f"{name} im Stream"
     seen, tags = set(), []
     for t in base:
         if t not in seen:
@@ -128,6 +148,8 @@ def _generate_anthropic(prompt: str) -> dict:
 def generate(creator_style: dict, name: str, source: SourceItem, transcript: Optional[str] = None) -> ClipMeta:
     provider = active_llm_provider()
     if not provider:
+        print("[metadata] KEIN LLM-Key gesetzt (OPENAI_API_KEY/ANTHROPIC_API_KEY) "
+              "-> Template-Fallback fuer Caption/Hook!", flush=True)
         return _fallback(creator_style, name, source)
     prompt = _build_prompt(creator_style, name, source, transcript)
     try:
@@ -135,6 +157,7 @@ def generate(creator_style: dict, name: str, source: SourceItem, transcript: Opt
         meta = _meta_from_data(data, name, source)
         if meta:
             return meta
-    except Exception:
-        pass
+        print(f"[metadata] LLM-Antwort ohne caption ({provider}) -> Template-Fallback.", flush=True)
+    except Exception as exc:
+        print(f"[metadata] LLM-Fehler ({provider}): {exc} -> Template-Fallback.", flush=True)
     return _fallback(creator_style, name, source)

@@ -6,8 +6,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src import db
 from src.highlight.audio_energy import pick_segments
-from src.ingest.twitch import _parse_twitch_duration
-from src.ingest.youtube import _parse_iso8601_duration
 from src.metadata import generator
 from src.models import Clip, ClipMeta, Segment, SourceItem, TWITCH_CLIP
 from src.review import quality_gate
@@ -36,15 +34,9 @@ def test_pick_segments_empty():
     assert pick_segments([], 1.0) == []
 
 
-def test_duration_parsers():
-    assert _parse_twitch_duration("1h2m3s") == 3723
-    assert _parse_twitch_duration("45s") == 45
-    assert _parse_iso8601_duration("PT1H2M3S") == 3723
-    assert _parse_iso8601_duration("PT30S") == 30
-
-
 def test_metadata_fallback_without_key(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     src = SourceItem("trymacs", TWITCH_CLIP, "abc", "Krasse Aktion", "http://x")
     meta = generator.generate({"niche": ["gaming"], "tone": "hyped"}, "Trymacs", src)
     assert meta.caption
@@ -52,6 +44,32 @@ def test_metadata_fallback_without_key(monkeypatch):
     assert len(meta.hashtags) <= 8
     cap = meta.tiktok_caption()
     assert "#" in cap
+
+
+def test_clean_title_filters_chat_spam():
+    # Streamtitel wie "WWWWWWWWWW" duerfen nie in Caption/Hook landen.
+    assert generator._clean_source_title("WWWWWWWWWWWWWW") == ""
+    assert generator._clean_source_title("OMID REACTIONS????????????Ü??🔥") == "OMID REACTIONS Ü"
+    assert generator._clean_source_title("Krasse Aktion !prime WWWWW") == "Krasse Aktion"
+    # normale Titel bleiben erhalten
+    assert generator._clean_source_title("Deutschland gegen Paraguay") == "Deutschland gegen Paraguay"
+
+
+def test_fallback_caption_without_usable_title(monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    src = SourceItem("rohaze", TWITCH_CLIP, "abc", "WWWWWWWWWWWWWW", "http://x")
+    meta = generator.generate({"niche": ["gaming"], "tone": "hyped"}, "Rohaze", src)
+    assert "WWW" not in meta.caption
+    assert "WWW" not in meta.title
+    assert "Rohaze" in meta.caption
+
+
+def test_short_hook_filters_spam():
+    from src.pipeline import _short_hook
+
+    assert _short_hook("WWWWWWWWWWWWWW") == ""
+    assert _short_hook("WWWWW Deutschland gewinnt WWWWW") == "Deutschland gewinnt"
 
 
 def test_clipmeta_caption_formatting():

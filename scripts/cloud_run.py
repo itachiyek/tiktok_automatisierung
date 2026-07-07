@@ -126,6 +126,9 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
 
     load_env()
+    from src.config import active_llm_provider
+    print(f"[cloud] LLM-Provider fuer Captions: "
+          f"{active_llm_provider() or 'KEINER -> Template-Fallback (OPENAI_API_KEY als Secret setzen!)'}")
     for d in (DATA_DIR, RENDER_DIR):
         d.mkdir(parents=True, exist_ok=True)
     cfg = load_config()

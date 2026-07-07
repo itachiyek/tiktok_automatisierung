@@ -49,16 +49,19 @@ def _short_hook(title: str, max_words: int = 5, max_chars: int = 34) -> str:
     """Sinnvolle 3–5-Wort-Kurzbeschreibung für oben im Clip.
 
     - alles nach dem ersten '|' abschneiden (dort steht oft Twitch-Command-Spam)
-    - Chat-Befehle (!x/#x/@x) raus
+    - Chat-Befehle (!x/#x/@x) und Spam-Wörter ("WWWWWW", "?????") raus
     - nie auf einem Füllwort enden ("…UND")
     """
-    head = (title or "").split("|")[0]
+    head = generator._SPAM_RUN_RE.sub(" ", (title or "").split("|")[0])
     # Am ersten Satzende-Zeichen abschneiden, wenn dort schon ein sinnvoller
     # Teil steht (z. B. "Die beste Crew der Welt! SAND …" -> "Die beste Crew der Welt").
     first = re.split(r"[!?.:]", head)[0].strip()
     if len(first.split()) >= 3:
         head = first
-    words = [w for w in re.split(r"\s+", head) if w and not w.startswith(("!", "#", "@"))]
+    words = [
+        w for w in re.split(r"\s+", head)
+        if w and not w.startswith(("!", "#", "@")) and not generator._is_spam_word(w)
+    ]
     words = words[:max_words]
     while words and words[-1].lower().strip(".,!?:;-") in _STOP:
         words.pop()
