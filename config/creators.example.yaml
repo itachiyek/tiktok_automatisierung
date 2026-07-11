@@ -65,7 +65,8 @@ defaults:
     aspect_ratio: "9:16"
     burn_subtitles: true
     show_creator_credit: true  # faire Namensnennung; kein fremdes Wasserzeichen einbrennen
-    min_viral_score: 6         # Viralitäts-Gate (0-10): nur Segmente ab diesem LLM-Score posten
+    max_clips_per_source: 1    # nur der EINE beste Moment je Video (max. Vielfalt)
+    min_viral_score: 7.5       # Viralitäts-Gate (0-10): nur Top-Segmente posten (3 Videos/Tag)
   posting:
     per_account_per_day: 2
     require_human_review: true # zu Beginn manuelle Freigabe (später lockern)

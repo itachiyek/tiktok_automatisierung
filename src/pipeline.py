@@ -182,9 +182,11 @@ def process_source(
             db.mark_processed(conn, source.key, creator.id)
         return []
 
-    # Mehr Kandidaten als benötigt einsammeln – das Viralitäts-Gate wählt die besten.
+    # Immer breit scannen (mind. 6 Kandidaten), damit das Gate auch bei hoher
+    # Schwelle/kleinem Keep-Wert genug Auswahl hat – die besten gewinnen.
     max_clips = int(creator.clip.get("max_clips_per_source", 3))
-    candidates = select_segments(source, local, creator.clip, max_clips=max_clips * 3)
+    n_cand = max(6, max_clips * 3)
+    candidates = select_segments(source, local, creator.clip, max_clips=n_cand)
     if reuse and used:
         candidates = [
             s for s in candidates

@@ -30,7 +30,8 @@ LEDGER = DATA_DIR / "posted_log.json"
 STATE = DATA_DIR / "rotation_state.json"
 BERLIN = ZoneInfo("Europe/Berlin")
 UTC = timezone.utc
-START_HOUR, END_HOUR = 7, 22  # stündliche Slots (Ortszeit)
+# Genau 3 Posts pro Tag, zu reichweitenstarken TikTok-Zeiten (Berlin, Ortszeit).
+POST_HOURS = [12, 17, 20]
 
 
 def _load(p: Path, default):
@@ -133,12 +134,12 @@ def zernio_queue(client) -> tuple[int, datetime]:
 
 
 def next_slots(count: int, not_before: datetime) -> list[str]:
-    """`count` stündliche Slots 07–22 Uhr (Berlin) nach `not_before`, als UTC-ISO."""
+    """`count` Slots zu den POST_HOURS (3/Tag, Berlin) nach `not_before`, als UTC-ISO."""
     start_berlin = not_before.astimezone(BERLIN)
     out: list[str] = []
     day = start_berlin.date()
     while len(out) < count:
-        for h in range(START_HOUR, END_HOUR + 1):
+        for h in POST_HOURS:
             cand = datetime(day.year, day.month, day.day, h, 0, tzinfo=BERLIN)
             if cand <= start_berlin:
                 continue

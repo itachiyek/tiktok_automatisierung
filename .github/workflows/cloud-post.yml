@@ -10,8 +10,9 @@ on:
         type: boolean
         default: false
   schedule:
-    # Stündlich 07–22 Uhr Europe/Berlin (Sommerzeit = UTC+2 -> 05–20 UTC).
-    - cron: "0 5-20 * * *"
+    # Alle 2 Std. 08–22 Uhr Europe/Berlin (Sommerzeit = UTC+2). Der Lauf FÜLLT nur
+    # die Warteschlange auf; gepostet wird zu festen 3 Slots/Tag (POST_HOURS in cloud_run.py).
+    - cron: "0 6-20/2 * * *"
 
 permissions:
   contents: write   # State (Dedup-DB/Ledger) zurueck ins Repo
@@ -51,9 +52,9 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           if [ "${{ inputs.test }}" = "true" ]; then
-            python scripts/cloud_run.py --no-schedule --target 10 --max-new 4
+            python scripts/cloud_run.py --no-schedule --target 6 --max-new 3
           else
-            python scripts/cloud_run.py --target 10 --max-new 6
+            python scripts/cloud_run.py --target 6 --max-new 3
           fi
 
       - name: State zurueck ins Repo

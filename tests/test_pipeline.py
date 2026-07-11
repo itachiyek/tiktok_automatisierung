@@ -100,6 +100,29 @@ def test_virality_rank_without_key(monkeypatch):
     assert all(r[2] is None and r[1] == "" for r in ranked)
 
 
+def test_next_slots_three_per_day():
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
+
+    from scripts.cloud_run import POST_HOURS, next_slots
+
+    assert len(POST_HOURS) == 3
+    berlin = ZoneInfo("Europe/Berlin")
+    not_before = datetime(2026, 7, 8, 8, 0, tzinfo=berlin)  # vor dem ersten Slot des Tages
+    slots = next_slots(7, not_before)
+    assert len(slots) == 7
+    # Alle Slots liegen zu den POST_HOURS (Berlin-Zeit) und in der Zukunft.
+    hours = []
+    for s in slots:
+        dt = datetime.strptime(s, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        assert dt > not_before
+        hours.append(dt.astimezone(berlin).hour)
+    assert all(h in POST_HOURS for h in hours)
+    # Genau 3 Slots am ersten Tag (12/17/20 Uhr), dann Rollover.
+    assert hours[:3] == POST_HOURS
+    assert hours[3] == POST_HOURS[0]
+
+
 def test_used_ranges_roundtrip():
     conn = db.init_db(db.connect(":memory:"))
     c = Clip("trymacs", "twitch_vod:7", Segment(1830.0, 1895.0, 0.5), path="/x.mp4",
