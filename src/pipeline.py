@@ -1,6 +1,7 @@
 """Orchestrator: verbindet Ingest -> Highlight -> Edit -> Metadaten -> Review -> Upload."""
 from __future__ import annotations
 
+import os
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -182,6 +183,23 @@ def process_source(
             db.mark_processed(conn, source.key, creator.id)
         return []
 
+    try:
+        return _process_downloaded(
+            conn, creator, source, auto_upload, reuse, local, offset, used, created
+        )
+    finally:
+        # Große Quelldatei (VOD-Fenster, ~100–300 MB) nach Verarbeitung löschen –
+        # sonst läuft die CI-Disk bei vielen Quellen pro Lauf voll.
+        try:
+            os.remove(local)
+        except OSError:
+            pass
+
+
+def _process_downloaded(
+    conn, creator: Creator, source: SourceItem, auto_upload: bool, reuse: bool,
+    local: str, offset: float, used: list, created: List[Clip],
+) -> List[Clip]:
     # Immer breit scannen (mind. 6 Kandidaten), damit das Gate auch bei hoher
     # Schwelle/kleinem Keep-Wert genug Auswahl hat – die besten gewinnen.
     max_clips = int(creator.clip.get("max_clips_per_source", 3))

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 from typing import Optional
@@ -146,4 +147,11 @@ def make_clip(
     credit = credit_text if clip_cfg.get("show_creator_credit", False) else None
     final = str(work / f"{basename}.mp4")
     burn(inter, final, ass_path, credit, title_png=title_png)
+    # Zwischendateien löschen (Disk sparen – auf CI-Runnern knapp).
+    for tmp in (inter, title_png, ass_path):
+        try:
+            if tmp:
+                os.remove(tmp)
+        except OSError:
+            pass
     return final
