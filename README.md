@@ -7,6 +7,12 @@ als Partnermodell mit Einwilligung der Creator.
 schneiden + Untertitel + Creator-Credit → Texte & Hashtags per KI (Claude) → Qualitäts-/Review-Gate
 → Upload (TikTok Content Posting API) → Analyse.
 
+**Clip-Format (`face_split`, Standard):** Das Gesicht des Streamers wird automatisch
+gesucht (YuNet) und groß ins **obere** Panel gezogen, das **Originalvideo** läuft in voller
+Breite **darunter**. Wird kein Gesicht gefunden, rendert der Clip wie bisher als Vollbild
+auf unscharfem Hintergrund (`blur_pad`). Feinjustage über `defaults.clip` in
+`config/creators.yaml` (`face_fill`, `face_max_zoom`, `face_center_y`).
+
 ➡️ Strategie & Hintergrund: **[`PLAN.md`](./PLAN.md)**
 
 ---
@@ -82,7 +88,7 @@ src/
   db.py                # SQLite: Dedup + Clip-Status
   ingest/              # twitch.py · youtube.py · downloader.py (yt-dlp)
   highlight/           # audio_energy.py (Erkennung) · selector.py
-  edit/                # editor.py (ffmpeg 9:16) · subtitles.py (Whisper→ASS)
+  edit/                # editor.py (ffmpeg 9:16) · facecam.py (Gesicht groß oben)
   metadata/            # generator.py (Claude → Caption/Hashtags, Fallback-Template)
   review/              # quality_gate.py (Dedup, Länge, Review-Status)
   upload/              # tiktok.py (Content Posting API, Direct Post)

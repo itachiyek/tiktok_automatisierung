@@ -7,6 +7,7 @@ anthropic>=0.40         # Claude API (Texte/Hashtags, optional/umschaltbar)
 yt-dlp>=2024.1          # Download von Twitch/YouTube
 numpy>=1.24             # Audio-Energie-Analyse
 Pillow>=10.0            # Obertitel: Titel-Karte (weiße Box, runde Ecken) als PNG
+opencv-python-headless>=4.9  # Gesichtserkennung fürs Split-Layout (Gesicht groß oben)
 # (faster-whisper entfernt – keine gesprochenen Untertitel mehr, nur kurzer Titel oben)
 
 # Systemvoraussetzung (NICHT pip): ffmpeg + ffprobe im PATH

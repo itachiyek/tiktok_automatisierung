@@ -8,10 +8,15 @@ from pathlib import Path
 from typing import Optional
 
 from ..models import Segment
-from . import subtitles, title_card
+from . import facecam, subtitles, title_card
 
 # Obertitel: Abstand der Titel-Box von der Oberkante (bei 1080x1920).
 TITLE_Y = 260
+# Im Split-Layout sitzt der Titel ganz oben – das Gesicht darunter bleibt frei.
+TITLE_Y_SPLIT = 44
+
+# Standard-Layout: Gesicht des Streamers groß oben, Originalvideo unten.
+FACE_SPLIT = "face_split"
 
 # 9:16-Filter, blur_pad: Original mittig auf unscharfem, formatfüllendem Hintergrund.
 BLUR_PAD = (
@@ -42,20 +47,38 @@ def _run(cmd: list, cwd: Optional[str] = None) -> None:
         raise RuntimeError(f"ffmpeg fehlgeschlagen: {proc.stderr[-800:]}")
 
 
-def cut_and_reframe(src: str, seg: Segment, out: str, mode: str = "blur_pad") -> str:
-    vf = BLUR_PAD if mode == "blur_pad" else CROP
+def build_reframe(src: str, seg: Segment, mode: str, clip_cfg: Optional[dict] = None) -> tuple[str, bool, int]:
+    """Filtergraph für den 9:16-Zuschnitt: (graph, ist_filter_complex, title_y).
+
+    face_split sucht das Gesicht des Streamers und zieht es groß nach oben; ohne
+    Treffer (oder ohne OpenCV) fällt der Clip auf blur_pad zurück, statt zu
+    scheitern.
+    """
+    if mode == FACE_SPLIT:
+        layout = facecam.plan_for_clip(src, seg.start, seg.end, clip_cfg or {})
+        if layout:
+            return facecam.build_filter(layout), True, TITLE_Y_SPLIT
+        print("[edit] Kein Gesicht gefunden -> Vollbild-Layout (blur_pad).", flush=True)
+        mode = "blur_pad"
+    if mode == "crop":
+        return CROP, False, TITLE_Y
+    return BLUR_PAD, True, TITLE_Y
+
+
+def cut_and_reframe(
+    src: str, seg: Segment, out: str, mode: str = FACE_SPLIT, clip_cfg: Optional[dict] = None,
+) -> tuple[str, int]:
+    """Schneidet das Segment und bringt es ins 9:16-Format. -> (Pfad, title_y)"""
+    graph, is_complex, title_y = build_reframe(src, seg, mode, clip_cfg)
     cmd = ["ffmpeg", "-y", "-ss", str(seg.start), "-to", str(seg.end), "-i", src]
-    if mode == "blur_pad":
-        cmd += ["-filter_complex", vf]
-    else:
-        cmd += ["-vf", vf]
+    cmd += ["-filter_complex", graph] if is_complex else ["-vf", graph]
     cmd += [
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
         "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart",
         "-loglevel", "error", out,
     ]
     _run(cmd)
-    return out
+    return out, title_y
 
 
 def burn(
@@ -127,10 +150,10 @@ def make_clip(
     """
     work = Path(work_dir)
     work.mkdir(parents=True, exist_ok=True)
-    mode = clip_cfg.get("reframe_mode", "blur_pad")
+    mode = clip_cfg.get("reframe_mode", FACE_SPLIT)
 
     inter = str(work / f"{basename}_reframe.mp4")
-    cut_and_reframe(source_path, seg, inter, mode=mode)
+    _, title_y = cut_and_reframe(source_path, seg, inter, mode=mode, clip_cfg=clip_cfg)
 
     ass_path = None
     title_png = None
@@ -140,13 +163,15 @@ def make_clip(
         except Exception:
             try:  # Fallback ohne Pillow: ASS-Box (eckig, sonst gleicher Look)
                 dur = ffprobe_duration(inter) or (seg.end - seg.start)
-                ass_path = subtitles.write_title_ass(top_title, str(work / f"{basename}.ass"), dur)
+                ass_path = subtitles.write_title_ass(
+                    top_title, str(work / f"{basename}.ass"), dur, margin_v=title_y
+                )
             except Exception:
                 ass_path = None  # Titel optional – Clip trotzdem erzeugen
 
     credit = credit_text if clip_cfg.get("show_creator_credit", False) else None
     final = str(work / f"{basename}.mp4")
-    burn(inter, final, ass_path, credit, title_png=title_png)
+    burn(inter, final, ass_path, credit, title_png=title_png, title_y=title_y)
     # Zwischendateien löschen (Disk sparen – auf CI-Runnern knapp).
     for tmp in (inter, title_png, ass_path):
         try:

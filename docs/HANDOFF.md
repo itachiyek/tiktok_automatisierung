@@ -35,7 +35,8 @@ src/
   ingest/downloader.py # yt-dlp
   highlight/audio_energy.py # RMS-Peak-Erkennung (+ reine, testbare pick_segments)
   highlight/selector.py
-  edit/editor.py   # ffmpeg 9:16 (blur_pad/crop)
+  edit/editor.py   # ffmpeg 9:16 (face_split = Standard, blur_pad/crop)
+  edit/facecam.py  # Gesicht des Streamers finden (YuNet) + Split-Layout rechnen
   edit/subtitles.py# faster-whisper -> ASS (gebrannte Untertitel)
   metadata/generator.py # Claude API -> Caption/Hashtags (Fallback ohne Key)
   review/quality_gate.py # Dedup, Länge, Review-Status

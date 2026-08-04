@@ -90,17 +90,21 @@ WrapStyle: 0
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, BackColour, Bold, Italic, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Top,Arial,74,&H00000000,&H00FFFFFF,&H00FFFFFF,-1,0,3,10,0,8,70,70,260,1
+Style: Top,Arial,74,&H00000000,&H00FFFFFF,&H00FFFFFF,-1,0,3,10,0,8,70,70,{margin_v},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
 
 
-def write_title_ass(text: str, out_path: str, duration: float = 60.0) -> str:
-    """Ein kurzer Titel, der die ganze Clip-Dauer oben eingeblendet ist."""
+def write_title_ass(text: str, out_path: str, duration: float = 60.0, margin_v: int = 260) -> str:
+    """Ein kurzer Titel, der die ganze Clip-Dauer oben eingeblendet ist.
+
+    margin_v = Abstand von oben; im Split-Layout klein, damit das Gesicht
+    darunter frei bleibt.
+    """
     safe = " ".join((text or "").split()).replace("{", "(").replace("}", ")").replace("\\", "/")
-    body = TITLE_HEADER + (
+    body = TITLE_HEADER.format(margin_v=int(margin_v)) + (
         f"Dialogue: 0,{_ass_time(0)},{_ass_time(max(1.0, duration))},Top,,0,0,0,,{safe}\n"
     )
     Path(out_path).write_text(body, encoding="utf-8")
