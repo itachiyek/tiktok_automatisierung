@@ -7,11 +7,11 @@ als Partnermodell mit Einwilligung der Creator.
 schneiden + Untertitel + Creator-Credit → Texte & Hashtags per KI (Claude) → Qualitäts-/Review-Gate
 → Upload (TikTok Content Posting API) → Analyse.
 
-**Clip-Format (`face_split`, Standard):** Das Gesicht des Streamers wird automatisch
-gesucht (YuNet) und groß ins **obere** Panel gezogen, das **Originalvideo** läuft in voller
-Breite **darunter**. Wird kein Gesicht gefunden, rendert der Clip wie bisher als Vollbild
-auf unscharfem Hintergrund (`blur_pad`). Feinjustage über `defaults.clip` in
-`config/creators.yaml` (`face_fill`, `face_max_zoom`, `face_center_y`).
+**Clip-Format (`adaptive`, Standard):** Jeder Clip wird separat analysiert. Eine kleine
+Facecam am Bildrand ergibt einen Split-Screen aus Streamer und Gameplay. Eine große oder
+zentrale Hauptperson erhält einen einzelnen dynamischen 9:16-Ausschnitt. Ohne klares
+Hauptmotiv bleibt das vollständige Video auf einem formatfüllenden Hintergrund sichtbar.
+Die Modi `face_split`, `crop` und `blur_pad` können pro Creator weiterhin erzwungen werden.
 
 ➡️ Strategie & Hintergrund: **[`PLAN.md`](./PLAN.md)**
 
@@ -88,7 +88,7 @@ src/
   db.py                # SQLite: Dedup + Clip-Status
   ingest/              # twitch.py · youtube.py · downloader.py (yt-dlp)
   highlight/           # audio_energy.py (Erkennung) · selector.py
-  edit/                # editor.py (ffmpeg 9:16) · facecam.py (Gesicht groß oben)
+  edit/                # editor.py (adaptives ffmpeg 9:16) · facecam.py (Layout-Erkennung)
   metadata/            # generator.py (Claude → Caption/Hashtags, Fallback-Template)
   review/              # quality_gate.py (Dedup, Länge, Review-Status)
   upload/              # tiktok.py (Content Posting API, Direct Post)

@@ -1,4 +1,4 @@
-"""Tests fürs Split-Layout (Gesicht groß oben, Video unten) – ohne OpenCV/ffmpeg."""
+"""Tests für adaptive 9:16-Layouts – ohne OpenCV/ffmpeg."""
 import os
 import sys
 
@@ -154,6 +154,64 @@ def test_build_reframe_keeps_the_old_modes():
     assert editor.build_reframe("x.mp4", Segment(0, 61), "blur_pad", {}) == (editor.BLUR_PAD, True, editor.TITLE_Y)
 
 
-def test_split_is_the_default_mode():
-    assert editor.FACE_SPLIT == "face_split"
-    assert editor.cut_and_reframe.__defaults__[0] == editor.FACE_SPLIT
+def test_adaptive_is_the_default_mode():
+    assert editor.ADAPTIVE == "adaptive"
+    assert editor.cut_and_reframe.__defaults__[0] == editor.ADAPTIVE
+
+
+def test_adaptive_uses_split_only_for_small_edge_facecam():
+    decision = facecam.choose_layout(*HD, Box(1740, 40, 100, 130))
+    assert decision.mode == facecam.LAYOUT_SPLIT
+    assert decision.split is not None
+
+
+def test_adaptive_does_not_duplicate_an_oversized_facecam():
+    # A cutout this large is already prominent and should not be duplicated.
+    decision = facecam.choose_layout(*HD, Box(1460, 420, 350, 520))
+    assert decision.mode == facecam.LAYOUT_FULL
+
+
+def test_adaptive_focuses_a_large_primary_speaker():
+    decision = facecam.choose_layout(*HD, Box(710, 180, 500, 620))
+    assert decision.mode == facecam.LAYOUT_FOCUS
+    assert decision.focus is not None
+    crop = decision.focus
+    assert crop.x <= decision.face.cx <= crop.x + crop.w
+    assert abs(crop.w / crop.h - OUT_W / OUT_H) < 0.01
+
+
+def test_adaptive_preserves_context_for_small_central_subject():
+    decision = facecam.choose_layout(*HD, Box(910, 410, 90, 120))
+    assert decision.mode == facecam.LAYOUT_FULL
+    assert decision.split is None and decision.focus is None
+
+
+def test_adaptive_preserves_full_frame_without_face_or_for_portrait():
+    assert facecam.choose_layout(*HD, None).mode == facecam.LAYOUT_FULL
+    assert facecam.choose_layout(1080, 1920, Box(300, 300, 400, 500)).mode == facecam.LAYOUT_FULL
+
+
+def test_build_focus_filter_is_single_portrait_crop():
+    crop = facecam.focus_crop(*HD, Box(710, 180, 500, 620))
+    graph = facecam.build_focus_filter(crop)
+    assert graph.startswith(f"crop={crop.w}:{crop.h}:{crop.x}:{crop.y}")
+    assert f"scale={OUT_W}:{OUT_H}" in graph
+    assert "vstack" not in graph
+
+
+def test_build_reframe_honors_adaptive_focus(monkeypatch):
+    decision = facecam.choose_layout(*HD, Box(710, 180, 500, 620))
+    monkeypatch.setattr(facecam, "adaptive_plan_for_clip", lambda *a, **k: decision)
+    graph, is_complex, title_y = editor.build_reframe(
+        "x.mp4", Segment(0, 61), editor.ADAPTIVE, {}
+    )
+    assert not is_complex and "scale=1080:1920" in graph and "vstack" not in graph
+    assert title_y == editor.TITLE_Y_FOCUS
+
+
+def test_build_reframe_honors_adaptive_full_frame(monkeypatch):
+    decision = facecam.choose_layout(*HD, None)
+    monkeypatch.setattr(facecam, "adaptive_plan_for_clip", lambda *a, **k: decision)
+    assert editor.build_reframe(
+        "x.mp4", Segment(0, 61), editor.ADAPTIVE, {}
+    ) == (editor.BLUR_PAD, True, editor.TITLE_Y)

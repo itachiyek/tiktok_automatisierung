@@ -1,8 +1,9 @@
-"""Gesicht des Streamers finden und das 9:16-Split-Layout dafür berechnen.
+"""Gesicht des Streamers finden und ein passendes 9:16-Layout wählen.
 
-Layout (1080x1920):
-  oben   = stark herangezoomter Ausschnitt um das Gesicht (Facecam/Webcam)
-  unten  = das Originalvideo in voller Breite (Gameplay/Content)
+Adaptive Layouts (1080x1920):
+  face_split = kleine Facecam groß oben, Gameplay vollständig unten
+  face_focus = ein einzelner Hochkant-Ausschnitt um die Hauptperson
+  full_frame = vollständiger Kontext auf formatfüllendem Hintergrund
 
 Erkennung: YuNet (kleines ONNX-Netz, liegt in models/) über OpenCV. Fehlt das
 Modell, greifen die Haar-Cascades aus dem opencv-Wheel – die sind schwächer,
@@ -42,6 +43,19 @@ BOTTOM_MAX = 0.46
 # Quellen, die schon (fast) hochkant sind, taugen nicht für ein Split-Layout.
 MIN_SOURCE_ASPECT = 1.2
 
+# Adaptive layout thresholds. A small face only indicates a webcam overlay when
+# it also sits close to an edge; a small face in the middle can be part of an
+# IRL/wide shot where preserving the full scene is more important.
+SMALL_FACE_MAX_WIDTH = 0.12
+WEBCAM_MAX_WIDTH = 0.16
+FOCUS_MIN_WIDTH = 0.20
+EDGE_X = 0.30
+EDGE_Y = 0.30
+
+LAYOUT_SPLIT = "face_split"
+LAYOUT_FOCUS = "face_focus"
+LAYOUT_FULL = "full_frame"
+
 
 def _log(msg: str) -> None:
     print(f"[facecam] {msg}", flush=True)
@@ -76,6 +90,17 @@ class SplitLayout:
     crop: Box       # Gesichts-Ausschnitt in Quell-Pixeln
     top_h: int      # Höhe des oberen Panels (Gesicht)
     bottom_h: int   # Höhe des unteren Panels (Originalvideo)
+
+
+@dataclass(frozen=True)
+class AdaptiveLayout:
+    """Per-clip decision plus the geometry needed by the renderer."""
+
+    mode: str
+    reason: str
+    face: Optional[Box] = None
+    split: Optional[SplitLayout] = None
+    focus: Optional[Box] = None
 
 
 # --- Layout-Mathematik (rein, ohne OpenCV/ffmpeg) ------------------------
@@ -152,6 +177,96 @@ def build_filter(layout: SplitLayout) -> str:
         "force_original_aspect_ratio=increase:flags=lanczos,"
         f"crop={OUT_W}:{layout.bottom_h}[bot];"
         "[top][bot]vstack=inputs=2,setsar=1"
+    )
+
+
+def focus_crop(src_w: int, src_h: int, face: Box) -> Box:
+    """Largest 9:16 crop centered horizontally on the main face.
+
+    This is intended for full-camera, interview and IRL shots. It avoids the
+    duplicated face/gameplay split while keeping the speaker in frame.
+    """
+    target_aspect = OUT_W / OUT_H
+    if src_w / max(src_h, 1) >= target_aspect:
+        h = max(_even_down(src_h), 2)
+        w = min(max(_even_down(h * target_aspect), 2), max(_even_down(src_w), 2))
+        x = _even_down(min(max(face.cx - w / 2, 0), max(src_w - w, 0)))
+        return Box(x, 0, w, h)
+
+    # Defensive path for unusual narrow sources: use the full width and move
+    # the crop vertically around the face.
+    w = max(_even_down(src_w), 2)
+    h = min(max(_even_down(w / target_aspect), 2), max(_even_down(src_h), 2))
+    y = _even_down(min(max(face.cy - h * 0.42, 0), max(src_h - h, 0)))
+    return Box(0, y, w, h)
+
+
+def build_focus_filter(crop: Box) -> str:
+    """ffmpeg filter for a single, face-aware portrait crop."""
+    return (
+        f"crop={crop.w}:{crop.h}:{crop.x}:{crop.y},"
+        f"scale={OUT_W}:{OUT_H}:flags=lanczos,setsar=1"
+    )
+
+
+def choose_layout(
+    src_w: int,
+    src_h: int,
+    face: Optional[Box],
+    cfg: Optional[dict] = None,
+) -> AdaptiveLayout:
+    """Choose split, face-focused portrait, or context-preserving full frame.
+
+    Split-screen is reserved for a small facecam at an edge of a landscape
+    source. Large/central speakers receive one portrait crop. With no reliable
+    primary subject, the complete source frame is preserved.
+    """
+    cfg = cfg or {}
+    if src_w <= 0 or src_h <= 0:
+        return AdaptiveLayout(LAYOUT_FULL, "unknown source size")
+    if src_w / src_h < MIN_SOURCE_ASPECT:
+        return AdaptiveLayout(LAYOUT_FULL, "source already portrait or square", face=face)
+    if face is None:
+        return AdaptiveLayout(LAYOUT_FULL, "no stable face")
+
+    width_ratio = face.w / src_w
+    cx = face.cx / src_w
+    cy = face.cy / src_h
+    near_edge = (
+        cx <= float(cfg.get("layout_edge_x", EDGE_X))
+        or cx >= 1 - float(cfg.get("layout_edge_x", EDGE_X))
+        or cy <= float(cfg.get("layout_edge_y", EDGE_Y))
+        or cy >= 1 - float(cfg.get("layout_edge_y", EDGE_Y))
+    )
+    webcam_max = float(cfg.get("webcam_max_width_ratio", WEBCAM_MAX_WIDTH))
+    small_max = float(cfg.get("small_face_max_width_ratio", SMALL_FACE_MAX_WIDTH))
+    focus_min = float(cfg.get("focus_min_width_ratio", FOCUS_MIN_WIDTH))
+
+    if near_edge and width_ratio <= webcam_max:
+        split = plan(src_w, src_h, face, cfg)
+        return AdaptiveLayout(
+            LAYOUT_SPLIT,
+            f"small edge facecam ({width_ratio:.1%} of frame width)",
+            face=face,
+            split=split,
+        )
+    if width_ratio >= focus_min or (not near_edge and width_ratio > small_max):
+        crop = focus_crop(src_w, src_h, face)
+        return AdaptiveLayout(
+            LAYOUT_FOCUS,
+            f"primary speaker ({width_ratio:.1%} of frame width)",
+            face=face,
+            focus=crop,
+        )
+    reason = (
+        "facecam already large enough; preserve gameplay"
+        if near_edge
+        else "small central subject; preserve context"
+    )
+    return AdaptiveLayout(
+        LAYOUT_FULL,
+        f"{reason} ({width_ratio:.1%} of frame width)",
+        face=face,
     )
 
 
@@ -394,3 +509,27 @@ def plan_for_clip(src: str, start: float, end: float, cfg: Optional[dict] = None
     if face is None:
         return None
     return plan(src_w, src_h, face, cfg)
+
+
+def adaptive_plan_for_clip(
+    src: str,
+    start: float,
+    end: float,
+    cfg: Optional[dict] = None,
+) -> AdaptiveLayout:
+    """Inspect one clip and return its content-aware vertical layout."""
+    cfg = cfg or {}
+    src_w, src_h = probe_size(src)
+    if src_w <= 0 or src_h <= 0:
+        decision = choose_layout(src_w, src_h, None, cfg)
+        _log(f"Layout {decision.mode}: {decision.reason}.")
+        return decision
+    if src_w / src_h < MIN_SOURCE_ASPECT:
+        decision = choose_layout(src_w, src_h, None, cfg)
+        _log(f"Layout {decision.mode}: {decision.reason} ({src_w}x{src_h}).")
+        return decision
+
+    face = detect_face(src, start, end, src_w, src_h, cfg)
+    decision = choose_layout(src_w, src_h, face, cfg)
+    _log(f"Layout {decision.mode}: {decision.reason}.")
+    return decision

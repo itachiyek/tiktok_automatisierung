@@ -14,8 +14,11 @@ from . import facecam, subtitles, title_card
 TITLE_Y = 260
 # Im Split-Layout sitzt der Titel ganz oben – das Gesicht darunter bleibt frei.
 TITLE_Y_SPLIT = 44
+# Beim einzelnen Sprecher-Crop bleibt die Karte ebenfalls am oberen Rand.
+TITLE_Y_FOCUS = 44
 
-# Standard-Layout: Gesicht des Streamers groß oben, Originalvideo unten.
+# Adaptive is the default. FACE_SPLIT remains available as an explicit override.
+ADAPTIVE = "adaptive"
 FACE_SPLIT = "face_split"
 
 # 9:16-Filter, blur_pad: Original mittig auf unscharfem, formatfüllendem Hintergrund.
@@ -50,12 +53,20 @@ def _run(cmd: list, cwd: Optional[str] = None) -> None:
 def build_reframe(src: str, seg: Segment, mode: str, clip_cfg: Optional[dict] = None) -> tuple[str, bool, int]:
     """Filtergraph für den 9:16-Zuschnitt: (graph, ist_filter_complex, title_y).
 
-    face_split sucht das Gesicht des Streamers und zieht es groß nach oben; ohne
-    Treffer (oder ohne OpenCV) fällt der Clip auf blur_pad zurück, statt zu
-    scheitern.
+    adaptive entscheidet pro Clip zwischen echtem Facecam-Split, einem einzelnen
+    Sprecher-Crop und einem kontexttreuen Vollbild. face_split bleibt als
+    erzwungener Modus für Creator/Quellen verfügbar.
     """
+    cfg = clip_cfg or {}
+    if mode == ADAPTIVE:
+        decision = facecam.adaptive_plan_for_clip(src, seg.start, seg.end, cfg)
+        if decision.mode == facecam.LAYOUT_SPLIT and decision.split:
+            return facecam.build_filter(decision.split), True, TITLE_Y_SPLIT
+        if decision.mode == facecam.LAYOUT_FOCUS and decision.focus:
+            return facecam.build_focus_filter(decision.focus), False, TITLE_Y_FOCUS
+        return BLUR_PAD, True, TITLE_Y
     if mode == FACE_SPLIT:
-        layout = facecam.plan_for_clip(src, seg.start, seg.end, clip_cfg or {})
+        layout = facecam.plan_for_clip(src, seg.start, seg.end, cfg)
         if layout:
             return facecam.build_filter(layout), True, TITLE_Y_SPLIT
         print("[edit] Kein Gesicht gefunden -> Vollbild-Layout (blur_pad).", flush=True)
@@ -66,7 +77,7 @@ def build_reframe(src: str, seg: Segment, mode: str, clip_cfg: Optional[dict] = 
 
 
 def cut_and_reframe(
-    src: str, seg: Segment, out: str, mode: str = FACE_SPLIT, clip_cfg: Optional[dict] = None,
+    src: str, seg: Segment, out: str, mode: str = ADAPTIVE, clip_cfg: Optional[dict] = None,
 ) -> tuple[str, int]:
     """Schneidet das Segment und bringt es ins 9:16-Format. -> (Pfad, title_y)"""
     graph, is_complex, title_y = build_reframe(src, seg, mode, clip_cfg)
@@ -150,7 +161,7 @@ def make_clip(
     """
     work = Path(work_dir)
     work.mkdir(parents=True, exist_ok=True)
-    mode = clip_cfg.get("reframe_mode", FACE_SPLIT)
+    mode = clip_cfg.get("reframe_mode", ADAPTIVE)
 
     inter = str(work / f"{basename}_reframe.mp4")
     _, title_y = cut_and_reframe(source_path, seg, inter, mode=mode, clip_cfg=clip_cfg)
