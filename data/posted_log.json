@@ -4,7 +4,7 @@
       "file": "twitch_vod_2811127424_0.mp4",
       "posted_utc": "2026-07-05T02:07:12Z",
       "post_id": "6a49bc4e3f53ae93d9962478",
-      "status": "published",
+      "status": "publishing",
       "account": "Streamer Clips 🇩🇪"
     },
     {
@@ -1643,7 +1643,7 @@
       "file": "twitch_vod_2870268958_2414.mp4",
       "posted_utc": "2026-09-12T13:16:22Z",
       "post_id": "6aa550a48a91a21cb37d952a",
-      "status": "publishing",
+      "status": "published",
       "account": "Streamer Clips 🇩🇪"
     }
   ]
