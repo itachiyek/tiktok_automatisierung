@@ -7,10 +7,11 @@ als Partnermodell mit Einwilligung der Creator.
 schneiden + Untertitel + Creator-Credit → Texte & Hashtags per KI (Claude) → Qualitäts-/Review-Gate
 → Upload (TikTok Content Posting API) → Analyse.
 
-**Clip-Format (`adaptive`, Standard):** Jeder Clip wird separat analysiert. Eine kleine
-Facecam am Bildrand ergibt einen Split-Screen aus Streamer und Gameplay. Eine große oder
-zentrale Hauptperson erhält einen einzelnen dynamischen 9:16-Ausschnitt. Ohne klares
-Hauptmotiv bleibt das vollständige Video auf einem formatfüllenden Hintergrund sichtbar.
+**Clip-Format (`adaptive`, Standard):** Jeder Clip wird separat analysiert. Bei Gameplay
+mit kleiner Rand-Facecam füllt das Spiel den Hochkant-Frame; der Streamer erscheint genau
+einmal als kleine Bild-in-Bild-Kamera. Eine große oder zentrale Hauptperson erhält einen
+einzelnen dynamischen 9:16-Ausschnitt. Ohne klares Hauptmotiv bleibt das vollständige Video
+auf einem formatfüllenden Hintergrund sichtbar.
 Die Modi `face_split`, `crop` und `blur_pad` können pro Creator weiterhin erzwungen werden.
 
 ➡️ Strategie & Hintergrund: **[`PLAN.md`](./PLAN.md)**

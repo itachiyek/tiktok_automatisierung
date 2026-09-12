@@ -159,10 +159,27 @@ def test_adaptive_is_the_default_mode():
     assert editor.cut_and_reframe.__defaults__[0] == editor.ADAPTIVE
 
 
-def test_adaptive_uses_split_only_for_small_edge_facecam():
+def test_adaptive_uses_compact_pip_for_small_side_facecam():
     decision = facecam.choose_layout(*HD, Box(1740, 40, 100, 130))
-    assert decision.mode == facecam.LAYOUT_SPLIT
-    assert decision.split is not None
+    assert decision.mode == facecam.LAYOUT_GAMEPLAY
+    assert decision.gameplay is not None
+    assert decision.split is None
+    assert decision.gameplay.pip_w < OUT_W / 2
+    assert decision.gameplay.game_crop.x + decision.gameplay.game_crop.w < decision.face.x
+
+
+def test_gameplay_pip_filter_contains_face_only_once():
+    layout = facecam.gameplay_pip_plan(*HD, Box(1740, 40, 100, 130))
+    graph = facecam.build_gameplay_pip_filter(layout)
+    assert graph.count("[face]crop=") == 1
+    assert "vstack" not in graph
+    assert f"overlay={layout.pip_x}:{layout.pip_y}" in graph
+    assert f"crop={layout.game_crop.w}:{layout.game_crop.h}" in graph
+
+
+def test_small_top_center_face_does_not_force_gameplay_pip():
+    decision = facecam.choose_layout(*HD, Box(910, 10, 100, 130))
+    assert decision.mode == facecam.LAYOUT_FULL
 
 
 def test_adaptive_does_not_duplicate_an_oversized_facecam():
@@ -207,6 +224,16 @@ def test_build_reframe_honors_adaptive_focus(monkeypatch):
     )
     assert not is_complex and "scale=1080:1920" in graph and "vstack" not in graph
     assert title_y == editor.TITLE_Y_FOCUS
+
+
+def test_build_reframe_honors_adaptive_gameplay_pip(monkeypatch):
+    decision = facecam.choose_layout(*HD, Box(1740, 40, 100, 130))
+    monkeypatch.setattr(facecam, "adaptive_plan_for_clip", lambda *a, **k: decision)
+    graph, is_complex, title_y = editor.build_reframe(
+        "x.mp4", Segment(0, 61), editor.ADAPTIVE, {}
+    )
+    assert is_complex and "overlay=" in graph and "vstack" not in graph
+    assert title_y == editor.TITLE_Y_GAMEPLAY
 
 
 def test_build_reframe_honors_adaptive_full_frame(monkeypatch):

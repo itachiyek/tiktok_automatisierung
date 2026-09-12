@@ -63,12 +63,17 @@ defaults:
     min_duration_sec: 61       # > 60 Sek. wegen TikTok Creator Rewards
     max_duration_sec: 90
     aspect_ratio: "9:16"
-    reframe_mode: adaptive     # pro Clip: Facecam-Split, Sprecher-Crop oder volles Bild
+    reframe_mode: adaptive     # pro Clip: Gameplay+kleine PIP, Sprecher-Crop oder volles Bild
+    gameplay_pip_width: 300
+    gameplay_pip_height: 400
+    gameplay_pip_x: 30
+    gameplay_pip_y: 230
+    gameplay_pip_face_fill: 0.62
     face_fill: 0.44            # Gesichtshöhe im oberen Panel (höher = näher dran)
     face_max_zoom: 3.2         # Vergrößerungs-Deckel (höher = größer, aber unschärfer)
     face_center_y: 0.54        # Gesichtsmitte im oberen Panel (Platz für den Titel)
     face_detect_frames: 9      # Stichproben-Frames für die Gesichtserkennung
-    webcam_max_width_ratio: 0.16 # Split nur bei kleiner Facecam am Bildrand
+    webcam_max_width_ratio: 0.16 # kleine Rand-Facecam wird einmal als kompakte PIP gesetzt
     focus_min_width_ratio: 0.20  # größere Hauptperson als einzelner Hochkant-Crop
     burn_subtitles: true
     show_creator_credit: true  # faire Namensnennung; kein fremdes Wasserzeichen einbrennen

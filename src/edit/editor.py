@@ -16,6 +16,8 @@ TITLE_Y = 260
 TITLE_Y_SPLIT = 44
 # Beim einzelnen Sprecher-Crop bleibt die Karte ebenfalls am oberen Rand.
 TITLE_Y_FOCUS = 44
+# Beim Gameplay-PIP bleibt der Hook oberhalb der kleinen Kamera.
+TITLE_Y_GAMEPLAY = 44
 
 # Adaptive is the default. FACE_SPLIT remains available as an explicit override.
 ADAPTIVE = "adaptive"
@@ -53,13 +55,15 @@ def _run(cmd: list, cwd: Optional[str] = None) -> None:
 def build_reframe(src: str, seg: Segment, mode: str, clip_cfg: Optional[dict] = None) -> tuple[str, bool, int]:
     """Filtergraph für den 9:16-Zuschnitt: (graph, ist_filter_complex, title_y).
 
-    adaptive entscheidet pro Clip zwischen echtem Facecam-Split, einem einzelnen
-    Sprecher-Crop und einem kontexttreuen Vollbild. face_split bleibt als
-    erzwungener Modus für Creator/Quellen verfügbar.
+    adaptive entscheidet pro Clip zwischen vertikalem Gameplay mit kompakter
+    Facecam-PIP, einem einzelnen Sprecher-Crop und einem kontexttreuen Vollbild.
+    face_split bleibt nur als erzwungener Legacy-Modus verfügbar.
     """
     cfg = clip_cfg or {}
     if mode == ADAPTIVE:
         decision = facecam.adaptive_plan_for_clip(src, seg.start, seg.end, cfg)
+        if decision.mode == facecam.LAYOUT_GAMEPLAY and decision.gameplay:
+            return facecam.build_gameplay_pip_filter(decision.gameplay), True, TITLE_Y_GAMEPLAY
         if decision.mode == facecam.LAYOUT_SPLIT and decision.split:
             return facecam.build_filter(decision.split), True, TITLE_Y_SPLIT
         if decision.mode == facecam.LAYOUT_FOCUS and decision.focus:

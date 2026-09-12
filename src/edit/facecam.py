@@ -1,7 +1,8 @@
 """Gesicht des Streamers finden und ein passendes 9:16-Layout wählen.
 
 Adaptive Layouts (1080x1920):
-  face_split = kleine Facecam groß oben, Gameplay vollständig unten
+  gameplay_pip = Gameplay hochkant, kleine Facecam genau einmal als Overlay
+  face_split = alter, nur noch explizit wählbarer Zwei-Panel-Modus
   face_focus = ein einzelner Hochkant-Ausschnitt um die Hauptperson
   full_frame = vollständiger Kontext auf formatfüllendem Hintergrund
 
@@ -53,6 +54,7 @@ EDGE_X = 0.30
 EDGE_Y = 0.30
 
 LAYOUT_SPLIT = "face_split"
+LAYOUT_GAMEPLAY = "gameplay_pip"
 LAYOUT_FOCUS = "face_focus"
 LAYOUT_FULL = "full_frame"
 
@@ -93,6 +95,18 @@ class SplitLayout:
 
 
 @dataclass(frozen=True)
+class GameplayPipLayout:
+    """Vertikales Gameplay mit genau einer kompakten Facecam."""
+
+    game_crop: Box
+    face_crop: Box
+    pip_w: int
+    pip_h: int
+    pip_x: int
+    pip_y: int
+
+
+@dataclass(frozen=True)
 class AdaptiveLayout:
     """Per-clip decision plus the geometry needed by the renderer."""
 
@@ -100,6 +114,7 @@ class AdaptiveLayout:
     reason: str
     face: Optional[Box] = None
     split: Optional[SplitLayout] = None
+    gameplay: Optional[GameplayPipLayout] = None
     focus: Optional[Box] = None
 
 
@@ -209,6 +224,85 @@ def build_focus_filter(crop: Box) -> str:
     )
 
 
+def _subject_crop(
+    src_w: int,
+    src_h: int,
+    subject: Box,
+    aspect: float,
+    *,
+    fill: float,
+    max_zoom: float,
+    output_h: int,
+) -> Box:
+    """Enger, unverzerrter Ausschnitt um ein Motiv für ein kleines Overlay."""
+    crop_h = max(subject.h / max(fill, 0.05), output_h / max(max_zoom, 1.0))
+    crop_w = crop_h * aspect
+    fit = min(1.0, src_w / max(crop_w, 1), src_h / max(crop_h, 1))
+    crop_w, crop_h = crop_w * fit, crop_h * fit
+    w = min(_even(crop_w), max(_even_down(src_w), 2))
+    h = min(_even(crop_h), max(_even_down(src_h), 2))
+    x = _even_down(min(max(subject.cx - w / 2, 0), max(src_w - w, 0)))
+    # Kopf im oberen Drittel: genug Platz für Schulterbewegung, während die
+    # bei Twitch oft direkt darüber liegende Minimap aus dem Tile herausfällt.
+    y = _even_down(min(max(subject.cy - h * 0.32, 0), max(src_h - h, 0)))
+    return Box(x, y, w, h)
+
+
+def gameplay_pip_plan(
+    src_w: int,
+    src_h: int,
+    face: Box,
+    cfg: Optional[dict] = None,
+) -> GameplayPipLayout:
+    """Gameplay füllt 9:16; die Rand-Facecam wird separat klein eingeblendet.
+
+    Der mittige 9:16-Crop entfernt eine typische links/rechts eingebettete
+    Stream-Facecam aus dem Gameplay. Dadurch taucht der Streamer im Ergebnis
+    nicht doppelt auf.
+    """
+    cfg = cfg or {}
+    game = focus_crop(src_w, src_h, Box(src_w // 2, src_h // 2, 2, 2))
+    pip_w = _even(float(cfg.get("gameplay_pip_width", 300)))
+    pip_h = _even(float(cfg.get("gameplay_pip_height", 400)))
+    pip_w = min(pip_w, OUT_W - 72)
+    pip_h = min(pip_h, OUT_H - 360)
+    tile = _subject_crop(
+        src_w,
+        src_h,
+        face,
+        pip_w / max(pip_h, 1),
+        # Eng am Kopf/Oberkörper bleiben: angrenzende Minimap und HUD gehören
+        # nicht in die kleine Kamera-Kachel.
+        fill=float(cfg.get("gameplay_pip_face_fill", 0.62)),
+        max_zoom=float(cfg.get("gameplay_pip_max_zoom", 2.4)),
+        output_h=pip_h,
+    )
+    x = int(cfg.get("gameplay_pip_x", 36))
+    y = int(cfg.get("gameplay_pip_y", 230))
+    x = max(0, min(x, OUT_W - pip_w - 8))
+    y = max(0, min(y, OUT_H - pip_h - 8))
+    return GameplayPipLayout(game, tile, pip_w, pip_h, x, y)
+
+
+def build_gameplay_pip_filter(layout: GameplayPipLayout) -> str:
+    """ffmpeg-Graph: vertikales Gameplay plus kleine, einmalige Facecam."""
+    g = layout.game_crop
+    f = layout.face_crop
+    border = 4
+    framed_w = layout.pip_w + border * 2
+    framed_h = layout.pip_h + border * 2
+    return (
+        "[0:v]split=2[game][face];"
+        f"[game]crop={g.w}:{g.h}:{g.x}:{g.y},"
+        f"scale={OUT_W}:{OUT_H}:flags=lanczos[base];"
+        f"[face]crop={f.w}:{f.h}:{f.x}:{f.y},"
+        f"scale={layout.pip_w}:{layout.pip_h}:flags=lanczos,"
+        "unsharp=5:5:0.35:5:5:0.0,"
+        f"pad={framed_w}:{framed_h}:{border}:{border}:color=white[pip];"
+        f"[base][pip]overlay={layout.pip_x}:{layout.pip_y},setsar=1"
+    )
+
+
 def choose_layout(
     src_w: int,
     src_h: int,
@@ -217,9 +311,9 @@ def choose_layout(
 ) -> AdaptiveLayout:
     """Choose split, face-focused portrait, or context-preserving full frame.
 
-    Split-screen is reserved for a small facecam at an edge of a landscape
-    source. Large/central speakers receive one portrait crop. With no reliable
-    primary subject, the complete source frame is preserved.
+    A small facecam at a side edge becomes a single compact picture-in-picture
+    over vertical gameplay. Large/central speakers receive one portrait crop.
+    With no reliable primary subject, the complete source frame is preserved.
     """
     cfg = cfg or {}
     if src_w <= 0 or src_h <= 0:
@@ -232,23 +326,25 @@ def choose_layout(
     width_ratio = face.w / src_w
     cx = face.cx / src_w
     cy = face.cy / src_h
+    edge_x = float(cfg.get("layout_edge_x", EDGE_X))
+    edge_y = float(cfg.get("layout_edge_y", EDGE_Y))
+    near_side_edge = cx <= edge_x or cx >= 1 - edge_x
     near_edge = (
-        cx <= float(cfg.get("layout_edge_x", EDGE_X))
-        or cx >= 1 - float(cfg.get("layout_edge_x", EDGE_X))
+        near_side_edge
         or cy <= float(cfg.get("layout_edge_y", EDGE_Y))
-        or cy >= 1 - float(cfg.get("layout_edge_y", EDGE_Y))
+        or cy >= 1 - edge_y
     )
     webcam_max = float(cfg.get("webcam_max_width_ratio", WEBCAM_MAX_WIDTH))
     small_max = float(cfg.get("small_face_max_width_ratio", SMALL_FACE_MAX_WIDTH))
     focus_min = float(cfg.get("focus_min_width_ratio", FOCUS_MIN_WIDTH))
 
-    if near_edge and width_ratio <= webcam_max:
-        split = plan(src_w, src_h, face, cfg)
+    if near_side_edge and width_ratio <= webcam_max:
+        gameplay = gameplay_pip_plan(src_w, src_h, face, cfg)
         return AdaptiveLayout(
-            LAYOUT_SPLIT,
-            f"small edge facecam ({width_ratio:.1%} of frame width)",
+            LAYOUT_GAMEPLAY,
+            f"small side facecam; use once as compact PIP ({width_ratio:.1%} of frame width)",
             face=face,
-            split=split,
+            gameplay=gameplay,
         )
     if width_ratio >= focus_min or (not near_edge and width_ratio > small_max):
         crop = focus_crop(src_w, src_h, face)

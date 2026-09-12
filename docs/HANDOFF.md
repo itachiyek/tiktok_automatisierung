@@ -35,7 +35,7 @@ src/
   ingest/downloader.py # yt-dlp
   highlight/audio_energy.py # RMS-Peak-Erkennung (+ reine, testbare pick_segments)
   highlight/selector.py
-  edit/editor.py   # ffmpeg 9:16 (adaptive = Standard; Split/Focus/Vollbild)
+  edit/editor.py   # ffmpeg 9:16 (adaptive = Standard; Gameplay-PIP/Focus/Vollbild)
   edit/facecam.py  # Gesicht finden (YuNet) + Layout pro Clip auswählen
   edit/subtitles.py# faster-whisper -> ASS (gebrannte Untertitel)
   metadata/generator.py # Claude API -> Caption/Hashtags (Fallback ohne Key)
