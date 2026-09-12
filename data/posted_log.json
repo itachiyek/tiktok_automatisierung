@@ -1598,8 +1598,9 @@
     },
     {
       "file": "twitch_vod_2869664937_1810.mp4",
-      "scheduled_utc": "2026-09-12T15:00:00Z",
+      "posted_utc": "2026-09-12T12:35:00Z",
       "post_id": "6aa545479071b114e549cdd9",
+      "status": "published",
       "account": "Streamer Clips 🇩🇪",
       "at": "2026-09-12T12:27:51Z"
     },
