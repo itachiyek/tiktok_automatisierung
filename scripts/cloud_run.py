@@ -117,11 +117,17 @@ def last_scheduled(ledger: dict) -> datetime:
     return max(now, dt)
 
 
-def zernio_queue(client) -> tuple[int, datetime]:
+def zernio_queue(client, account_id) -> tuple[int, datetime]:
     """Aus Zernio: (Anzahl noch geplanter Posts in der Zukunft, spätester Slot)."""
     now = datetime.now(UTC)
     future = []
     for p in client.list_posts():
+        account_ids = []
+        for platform in p.get("platforms", []):
+            value = platform.get("accountId")
+            account_ids.append(value.get("_id") if isinstance(value, dict) else value)
+        if account_id not in account_ids:
+            continue
         if p.get("status") != "scheduled" or not p.get("scheduledFor"):
             continue
         try:
@@ -190,7 +196,7 @@ def main(argv=None) -> int:
             print(f"  (no-post) Caption: {caption.splitlines()[0][:70]}")
             return 0
         client = ZernioClient(api_key_from_env())
-        acct = client.tiktok_account()
+        acct = client.tiktok_account(username="streamerclips1337")
         res = client.post_video(str(mp4), caption, acct["_id"], schedule_iso=None, privacy=args.privacy)
         post = res.get("post", res)
         pid = post.get("_id") or "?"
@@ -205,9 +211,9 @@ def main(argv=None) -> int:
 
     # Zernios Warteschlange ist die Wahrheit: wie viele Posts sind noch geplant?
     client = ZernioClient(api_key_from_env())
-    acct = client.tiktok_account()
+    acct = client.tiktok_account(username="streamerclips1337")
     aid = acct["_id"]
-    have, last = zernio_queue(client)
+    have, last = zernio_queue(client, aid)
     need = max(0, min(args.target - have, args.max_new))
     print(f"[cloud] Zernio-Warteschlange: {have} geplant | Ziel: {args.target} | fülle bis zu: {need}")
 

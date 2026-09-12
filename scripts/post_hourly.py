@@ -90,7 +90,7 @@ def main(argv=None) -> int:
 
     try:
         client = ZernioClient(api_key_from_env())
-        acct = client.tiktok_account()
+        acct = client.tiktok_account(username="streamerclips1337")
         res = client.post_video(str(mp4), caption, acct["_id"], schedule_iso=None, privacy=args.privacy)
         post = res.get("post", res)
         pid = post.get("_id") or "?"
